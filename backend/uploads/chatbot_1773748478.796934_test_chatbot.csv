@@ -1,0 +1,8 @@
+session_id,actor,message,created_at
+101,User,Hola me quiero anotar al curso de Python,2026-03-10 10:00:00
+101,Bot,Claro! El proceso de inscripcion es simple.,2026-03-10 10:01:00
+102,User,Cual es el precio?,2026-03-11 12:00:00
+102,Bot,El costo es de 50 USD.,2026-03-11 12:02:00
+103,User,Muchas gracias excelente soporte,2026-03-12 15:00:00
+104,User,No puedo ingresar a mi cuenta,2026-03-13 09:00:00
+104,Bot,Te ayudamos con el login.,2026-03-13 09:05:00

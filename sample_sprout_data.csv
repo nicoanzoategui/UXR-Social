@@ -1,0 +1,8 @@
+Network,Profile Name,Post ID,Post Text,Link,Interaction ID,Interaction Text,Username,Date,Message Type,Status
+Instagram,Main Brand,123456789,"This is a great product post!","https://instagram.com/p/123",987654321,"I love this! So useful.","user_a","2026-03-01 10:00:00",Comment,unreplied
+Instagram,Main Brand,123456789,"This is a great product post!","https://instagram.com/p/123",987654322,"Does it come in blue?","user_b","2026-03-01 11:00:00",Comment,unreplied
+Facebook,Brand Page,456789012,"Check out our new launch.","https://facebook.com/posts/456",987654323,"Price?","user_c","2026-03-02 09:30:00",Comment,replied
+LinkedIn,Brand Corp,789012345,"We are hiring!","https://linkedin.com/posts/789",987654324,"Interested in the role.","user_d","2026-03-03 14:20:00",Comment,unreplied
+Instagram,Main Brand,123456789,"This is a great product post!","https://instagram.com/p/123",987654325,"Top quality content as always.","user_a","2026-03-04 18:00:00",Comment,unreplied
+Instagram,Main Brand,123456789,"This is a great product post!","https://instagram.com/p/123",987654326,"Love the energy here.","user_e","2026-03-05 08:00:00",Comment,unreplied
+Facebook,Brand Page,456789012,"Check out our new launch.","https://facebook.com/posts/456",987654327,"Awesome features.","user_f","2026-03-06 12:00:00",Comment,unreplied
