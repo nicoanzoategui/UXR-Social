@@ -1,0 +1,475 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  FileText,
+  Send,
+  Plus,
+  X,
+  Mail,
+  CheckCircle2,
+  Loader2,
+  Trash2,
+  Sparkles,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { sendReport, getFullReport, getTopics, api } from "@/lib/api";
+
+const stepCircleClass =
+  "inline-flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full text-sm font-semibold";
+const stepCircleStyle = { background: "#f1f1ef", color: "#37352f" };
+
+const cardClass =
+  "rounded-xl border border-[var(--color-border-soft)] bg-white p-6 sm:p-8";
+
+export default function ReportsPage() {
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  const [emails, setEmails] = useState<string[]>([]);
+  const [currentEmail, setCurrentEmail] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const [loadingStep, setLoadingStep] = useState<string>("");
+  const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [topics, setTopics] = useState<{ topic: string; count: number }[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [aiSummaryByTheme, setAiSummaryByTheme] = useState<Record<string, string>>({});
+  const [aiErrorByTheme, setAiErrorByTheme] = useState<Record<string, string>>({});
+  const [aiLoadingTheme, setAiLoadingTheme] = useState<string | null>(null);
+
+  const [consolidatedSummary, setConsolidatedSummary] = useState<string | null>(null);
+  const [consolidatedLoading, setConsolidatedLoading] = useState(false);
+  const [consolidatedError, setConsolidatedError] = useState<string | null>(null);
+  const [consolidatedVisible, setConsolidatedVisible] = useState(false);
+
+  const datesComplete = Boolean(dateRange.start && dateRange.end);
+
+  useEffect(() => {
+    setConsolidatedSummary(null);
+    setConsolidatedError(null);
+    setConsolidatedVisible(false);
+  }, [dateRange.start, dateRange.end]);
+
+  useEffect(() => {
+    if (!dateRange.start || !dateRange.end) {
+      setTopics([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setTopicsLoading(true);
+      try {
+        const data = await getTopics({
+          start_date: dateRange.start,
+          end_date: dateRange.end,
+        });
+        if (!cancelled) setTopics(data || []);
+      } catch {
+        if (!cancelled) setTopics([]);
+      } finally {
+        if (!cancelled) setTopicsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dateRange.start, dateRange.end]);
+
+  const handleThemeSummary = async (themeName: string) => {
+    if (!dateRange.start || !dateRange.end) return;
+    setAiLoadingTheme(themeName);
+    setAiErrorByTheme((prev) => ({ ...prev, [themeName]: "" }));
+    try {
+      const { data } = await api.post<{
+        summary: string;
+        comments_analyzed: number;
+        theme: string;
+      }>(
+        "/analytics/theme-summary",
+        {},
+        {
+          params: {
+            theme: themeName,
+            start_date: dateRange.start,
+            end_date: dateRange.end,
+          },
+        }
+      );
+      setAiSummaryByTheme((prev) => ({
+        ...prev,
+        [themeName]: data.summary,
+      }));
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { detail?: string } }; message?: string };
+      const msg =
+        ax.response?.data?.detail ||
+        ax.message ||
+        "No se pudo generar el resumen.";
+      setAiErrorByTheme((prev) => ({ ...prev, [themeName]: String(msg) }));
+    } finally {
+      setAiLoadingTheme(null);
+    }
+  };
+
+  const handleConsolidatedClick = async () => {
+    if (!dateRange.start || !dateRange.end || consolidatedLoading) return;
+    if (consolidatedSummary && consolidatedVisible) {
+      setConsolidatedVisible(false);
+      return;
+    }
+    if (consolidatedSummary && !consolidatedVisible) {
+      setConsolidatedVisible(true);
+      return;
+    }
+    setConsolidatedLoading(true);
+    setConsolidatedError(null);
+    try {
+      const { data } = await api.post<{ summary: string }>(
+        "/analytics/consolidated-summary",
+        {},
+        {
+          params: {
+            start_date: dateRange.start,
+            end_date: dateRange.end,
+          },
+        }
+      );
+      setConsolidatedSummary(data.summary);
+      setConsolidatedVisible(true);
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { detail?: string } }; message?: string };
+      const msg =
+        ax.response?.data?.detail ||
+        ax.message ||
+        "No se pudo generar el resumen consolidado con IA.";
+      setConsolidatedError(String(msg));
+    } finally {
+      setConsolidatedLoading(false);
+    }
+  };
+
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const addEmail = () => {
+    if (currentEmail && isValidEmail(currentEmail) && !emails.includes(currentEmail)) {
+      setEmails([...emails, currentEmail]);
+      setCurrentEmail("");
+    } else if (currentEmail && !isValidEmail(currentEmail)) {
+      setError("El correo ingresado no tiene un formato válido.");
+    }
+  };
+
+  const removeEmail = (email: string) => {
+    setEmails(emails.filter((e) => e !== email));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (emails.length === 0) {
+      setError("Por favor, añade al menos un correo electrónico.");
+      return;
+    }
+    if (!dateRange.start || !dateRange.end) {
+      setError("Por favor, selecciona un rango de fechas válido.");
+      return;
+    }
+
+    setIsSending(true);
+    setError(null);
+    try {
+      setLoadingStep("Generando reporte...");
+      const reportData = await getFullReport({
+        start_date: dateRange.start,
+        end_date: dateRange.end,
+      });
+
+      setLoadingStep("Enviando emails...");
+      await sendReport({
+        emails,
+        start_date: dateRange.start,
+        end_date: dateRange.end,
+        report_data: reportData,
+      });
+
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 5000);
+    } catch (err: unknown) {
+      console.error("Error in report process:", err);
+      const ax = err as { response?: { data?: { detail?: string } } };
+      const msg =
+        ax.response?.data?.detail ||
+        "Hubo un error al procesar el reporte. Por favor, intenta nuevamente.";
+      setError(msg);
+    } finally {
+      setIsSending(false);
+      setLoadingStep("");
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-8 pb-12">
+      <header className="flex items-start gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-800)]">
+          <FileText className="h-6 w-6 text-white" />
+        </div>
+        <div>
+          <h1 className="heading-xl text-[var(--color-text-heading)]">Central de reportes</h1>
+          <p className="body-md mt-1 text-[var(--color-text-muted)]">
+            Configurá el período, revisá resultados y enviá el PDF por correo.
+          </p>
+        </div>
+      </header>
+
+      {/* ① Configurar análisis */}
+      <section className={cardClass}>
+        <div className="mb-6 flex items-center gap-3">
+          <span className={stepCircleClass} style={stepCircleStyle}>
+            1
+          </span>
+          <h2 className="text-lg font-bold text-[var(--color-text-heading)]">
+            ① Configurar análisis
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[var(--color-text-muted)]">Desde</label>
+            <input
+              type="date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+              className="w-full rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)] px-3 py-2.5 text-sm text-[var(--color-text-body)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-600)]/30"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-[var(--color-text-muted)]">Hasta</label>
+            <input
+              type="date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+              className="w-full rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)] px-3 py-2.5 text-sm text-[var(--color-text-body)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-600)]/30"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* ② Resultados */}
+      {datesComplete && (
+        <section className={cardClass}>
+          <div className="mb-6 flex items-center gap-3">
+            <span className={stepCircleClass} style={stepCircleStyle}>
+              2
+            </span>
+            <h2 className="text-lg font-bold text-[var(--color-text-heading)]">② Resultados</h2>
+          </div>
+
+          <div className="space-y-8">
+            <div>
+              <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Temas detectados
+              </h3>
+              {topicsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-[var(--color-text-muted)]">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  Cargando temas…
+                </div>
+              ) : topics.length === 0 ? (
+                <p className="text-sm text-[var(--color-text-muted)]">No hay datos para este período</p>
+              ) : (
+                <ul className="space-y-4">
+                  {topics.map((row) => (
+                    <li
+                      key={row.topic}
+                      className="rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)]/50 p-4"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-[var(--color-text-heading)]">
+                            {row.topic}
+                          </p>
+                          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                            {row.count} comentarios
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleThemeSummary(row.topic)}
+                          disabled={aiLoadingTheme === row.topic}
+                          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--color-primary-700)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                        >
+                          {aiLoadingTheme === row.topic ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Generando…
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-4 w-4" />
+                              Resumen IA
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      {aiErrorByTheme[row.topic] ? (
+                        <p className="mt-3 text-sm font-medium text-red-600">
+                          {aiErrorByTheme[row.topic]}
+                        </p>
+                      ) : null}
+                      {aiSummaryByTheme[row.topic] ? (
+                        <div
+                          className="mt-3 whitespace-pre-wrap rounded-md border border-[var(--color-border-soft)] bg-[#f7f7f5] p-4 text-sm leading-relaxed text-[var(--color-text-body)]"
+                          style={{ borderLeftWidth: 3, borderLeftColor: "#2383e2" }}
+                        >
+                          {aiSummaryByTheme[row.topic]}
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="border-t border-[var(--color-border-soft)] pt-8">
+              <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                Resumen consolidado
+              </h3>
+              <button
+                type="button"
+                onClick={handleConsolidatedClick}
+                disabled={consolidatedLoading}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+              >
+                {consolidatedLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generando resumen con IA…
+                  </>
+                ) : consolidatedSummary && consolidatedVisible ? (
+                  "Ocultar resumen consolidado"
+                ) : (
+                  "Ver resumen consolidado"
+                )}
+              </button>
+              {consolidatedError ? (
+                <p className="mt-3 text-sm font-medium text-red-600">{consolidatedError}</p>
+              ) : null}
+              {consolidatedSummary && consolidatedVisible ? (
+                <div
+                  className="mt-4 max-h-[min(520px,60vh)] overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--color-border-soft)] bg-[#f7f7f5] p-4 text-sm leading-relaxed text-[var(--color-text-body)]"
+                  style={{ borderLeftWidth: 3, borderLeftColor: "#2383e2" }}
+                >
+                  {consolidatedSummary}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ③ Enviar reporte */}
+      <section className={cardClass}>
+        <div className="mb-6 flex items-center gap-3">
+          <span className={stepCircleClass} style={stepCircleStyle}>
+            3
+          </span>
+          <h2 className="text-lg font-bold text-[var(--color-text-heading)]">③ Enviar reporte</h2>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="relative flex-1">
+              <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <input
+                type="email"
+                placeholder="correo@ejemplo.com"
+                value={currentEmail}
+                onChange={(e) => setCurrentEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addEmail())}
+                className="w-full rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)] py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-600)]/30"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={addEmail}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-primary-900)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black sm:w-auto"
+            >
+              <Plus className="h-4 w-4" />
+              Agregar
+            </button>
+          </div>
+
+          <div className="min-h-[100px] space-y-2">
+            <AnimatePresence>
+              {emails.map((email) => (
+                <motion.div
+                  key={email}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="flex items-center justify-between rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)] px-3 py-2.5"
+                >
+                  <span className="text-sm font-medium text-[var(--color-text-body)]">{email}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeEmail(email)}
+                    className="text-[var(--color-text-muted)] transition-colors hover:text-red-600"
+                    aria-label={`Quitar ${email}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {emails.length === 0 && (
+              <p className="py-4 text-center text-xs text-[var(--color-text-muted)]">
+                Todavía no agregaste destinatarios.
+              </p>
+            )}
+          </div>
+
+          <AnimatePresence mode="wait">
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700"
+              >
+                <X className="h-4 w-4 shrink-0" />
+                {error}
+              </motion.div>
+            )}
+            {success && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700"
+              >
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                ¡El reporte ha sido enviado con éxito!
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <button
+            type="submit"
+            disabled={isSending || emails.length === 0 || !dateRange.start || !dateRange.end}
+            className="btn btn-primary w-full justify-center py-3.5 text-sm font-semibold disabled:opacity-50"
+          >
+            {isSending ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                {loadingStep || "Procesando…"}
+              </>
+            ) : (
+              <>
+                <Send className="h-5 w-5" />
+                Enviar reporte PDF
+              </>
+            )}
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+}

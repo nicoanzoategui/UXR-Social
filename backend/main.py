@@ -4,19 +4,18 @@ import shutil
 import random
 import re
 import unicodedata
-import asyncio
-import json
-import subprocess
+import secrets
 import pandas as pd
 from datetime import datetime, timedelta
 from collections import Counter
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, BackgroundTasks, Request, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Request, Response, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlmodel import Session, select, SQLModel
 from sqlalchemy.orm import selectinload
+from sqlalchemy import or_, and_, func
 from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -27,15 +26,26 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 import io
+import json
+import google.generativeai as genai
 
 from database import engine, create_db_and_tables, get_session
-from models import Dataset, Comment, ImportLog, User
-from processing import clean_sprout_csv, process_scraped_reviews, process_chatbot_csv, process_google_maps_txt
+from models import Dataset, Comment, ImportLog, User, ShareToken
+from processing import clean_sprout_csv, process_chatbot_csv
 from auth import verify_password, get_password_hash, create_access_token, decode_token, ACCESS_TOKEN_EXPIRE_MINUTES
-from google_scraper import scrape_google_reviews
 
 # Load environment variables
 load_dotenv()
+
+# Google acepta GEMINI_API_KEY (AI Studio) o GOOGLE_API_KEY (nombres nuevos del SDK / documentación).
+GEMINI_API_KEY_VALUE = (
+    (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+)
+if GEMINI_API_KEY_VALUE:
+    genai.configure(api_key=GEMINI_API_KEY_VALUE)
+
+# generateContent: los alias gemini-1.5-* ya no están en v1beta; default alineado con la doc actual de Google AI.
+GEMINI_GENERATION_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
 class TagUpdate(BaseModel):
     tags: str
@@ -55,9 +65,26 @@ class ReportRequest(SQLModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     report_data: Optional[dict] = None
-class GoogleScrapeRequest(BaseModel):
-    url: str
-    max_reviews: int = 50
+
+
+class ShareTokenCreate(BaseModel):
+    label: str
+    expires_at: Optional[datetime] = None
+
+
+class ShareTokenRead(BaseModel):
+    id: int
+    token: str
+    label: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+    is_active: bool
+
+
+class ShareValidateResponse(BaseModel):
+    valid: bool
+    label: str
+
 
 class PDFGenerator:
     @staticmethod
@@ -155,8 +182,37 @@ app = FastAPI(title="Social Comments Analytics API")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS configuration
-origins = os.getenv("FRONTEND_URL", "http://localhost:3000,http://localhost:3001,http://localhost:3005,http://localhost:3006").split(",")
+# CORS: Next con --hostname 127.0.0.1 envía Origin http://127.0.0.1:PORT (distinto de localhost para el navegador).
+def _cors_allow_origins() -> List[str]:
+    default = (
+        "http://localhost:3000,http://localhost:3001,http://localhost:3005,http://localhost:3006,"
+        "http://127.0.0.1:3005,http://127.0.0.1:3006"
+    )
+    raw = (os.getenv("FRONTEND_URL") or default).split(",")
+    seen = set()
+    out: List[str] = []
+    for o in raw:
+        o = o.strip()
+        if o and o not in seen:
+            seen.add(o)
+            out.append(o)
+    mirror_pairs = [
+        ("http://localhost:3005", "http://127.0.0.1:3005"),
+        ("http://localhost:3006", "http://127.0.0.1:3006"),
+        ("http://localhost:3000", "http://127.0.0.1:3000"),
+        ("http://localhost:3001", "http://127.0.0.1:3001"),
+    ]
+    for a, b in mirror_pairs:
+        if a in seen and b not in seen:
+            seen.add(b)
+            out.append(b)
+        elif b in seen and a not in seen:
+            seen.add(a)
+            out.append(a)
+    return out
+
+
+origins = _cors_allow_origins()
 
 app.add_middleware(
     CORSMiddleware,
@@ -169,46 +225,67 @@ app.add_middleware(
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+def _upsert_seed_user(
+    session: Session,
+    username: Optional[str],
+    plain_password: Optional[str],
+    role: str,
+    *,
+    always_rehash: bool = False,
+) -> None:
+    """Create seed user or refresh password hash when env password no longer matches (fixes stale DB)."""
+    if not username or not plain_password:
+        return
+    existing = session.exec(select(User).where(User.username == username)).first()
+    if existing:
+        if existing.role != role:
+            existing.role = role
+        if always_rehash or not verify_password(plain_password, existing.hashed_password):
+            existing.hashed_password = get_password_hash(plain_password)
+        session.add(existing)
+    else:
+        session.add(User(
+            username=username,
+            hashed_password=get_password_hash(plain_password),
+            role=role
+        ))
+
 @app.on_event("startup")
 def on_startup():
     create_db_and_tables()
+    _non_prod = os.getenv("ENVIRONMENT", "development") != "production"
     with Session(engine) as session:
         admin_username = os.getenv("ADMIN_USERNAME")
-        admin_password = os.getenv("ADMIN_PASSWORD")
-        if admin_username and admin_password:
-            existing = session.exec(select(User).where(User.username == admin_username)).first()
-            if not existing:
-                session.add(User(
-                    username=admin_username,
-                    hashed_password=get_password_hash(admin_password),
-                    role="admin"
-                ))
-        else:
-            print("WARNING: ADMIN_USERNAME or ADMIN_PASSWORD not set — no default admin will be created.", file=sys.stderr)
-
         analyst_username = os.getenv("ANALYST_USERNAME")
-        analyst_password = os.getenv("ANALYST_PASSWORD")
-        if analyst_username and analyst_password:
-            existing = session.exec(select(User).where(User.username == analyst_username)).first()
-            if not existing:
-                session.add(User(
-                    username=analyst_username,
-                    hashed_password=get_password_hash(analyst_password),
-                    role="viewer"
-                ))
+        shared = (os.getenv("SEED_SHARED_PASSWORD") or "").strip()
+        admin_password = shared if shared else (os.getenv("ADMIN_PASSWORD") or "").strip()
+        analyst_password = shared if shared else (os.getenv("ANALYST_PASSWORD") or "").strip()
+
+        # En desarrollo, alinear siempre el hash con el .env (evita DB “huérfana” u otro cwd).
+        _upsert_seed_user(
+            session, admin_username, admin_password, "admin", always_rehash=_non_prod
+        )
+        if not admin_username or not admin_password:
+            print("WARNING: Set ADMIN_USERNAME and ADMIN_PASSWORD (or SEED_SHARED_PASSWORD) for the admin user.", file=sys.stderr)
+
+        _upsert_seed_user(
+            session, analyst_username, analyst_password, "viewer", always_rehash=_non_prod
+        )
+        if not analyst_username or not analyst_password:
+            print("WARNING: Set ANALYST_USERNAME and ANALYST_PASSWORD (or SEED_SHARED_PASSWORD) for the analyst user.", file=sys.stderr)
+
         session.commit()
 
 async def get_current_user(request: Request, session: Session = Depends(get_session)):
     token = None
-    # 1. Try httpOnly cookie first
-    cookie_val = request.cookies.get("access_token")
-    if cookie_val and cookie_val.startswith("Bearer "):
-        token = cookie_val[7:]
-    # 2. Fallback to Authorization header
+    # Authorization primero: el SPA guarda el JWT del JSON de /token (las cookies cross-origin fallan a veces en dev).
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
     if not token:
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            token = auth_header[7:]
+        cookie_val = request.cookies.get("access_token")
+        if cookie_val and cookie_val.startswith("Bearer "):
+            token = cookie_val[7:].strip()
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     payload = decode_token(token)
@@ -246,6 +323,23 @@ def create_user(user_in: UserCreate, session: Session = Depends(get_session), cu
     session.refresh(new_user)
     return new_user
 
+@app.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    if current_user.id == user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    session.delete(user)
+    session.commit()
+    return {"ok": True}
+
 @app.get("/")
 def read_root():
     return {"message": "Social Comments Analytics API is running"}
@@ -253,7 +347,12 @@ def read_root():
 @app.post("/token")
 @limiter.limit("10/minute")
 async def login(request: Request, response: Response, form_data: OAuth2PasswordRequestForm = Depends(), session: Session = Depends(get_session)):
-    user = session.exec(select(User).where(User.username == form_data.username)).first()
+    raw_user = (form_data.username or "").strip()
+    user = session.exec(select(User).where(User.username == raw_user)).first()
+    if not user and os.getenv("ENVIRONMENT", "development") != "production":
+        user = session.exec(
+            select(User).where(func.lower(User.username) == func.lower(raw_user))
+        ).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
 
@@ -278,6 +377,91 @@ async def logout(response: Response):
     response.delete_cookie(key="access_token", httponly=True, samesite="lax")
     return {"message": "Logged out successfully"}
 
+
+@app.post("/share-tokens", response_model=ShareTokenRead)
+def create_share_token(
+    body: ShareTokenCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    raw = secrets.token_urlsafe(32)
+    row = ShareToken(
+        token=raw,
+        created_by=current_user.id,
+        label=body.label,
+        expires_at=body.expires_at,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return ShareTokenRead(
+        id=row.id,
+        token=row.token,
+        label=row.label,
+        expires_at=row.expires_at,
+        created_at=row.created_at,
+        is_active=row.is_active,
+    )
+
+
+@app.get("/share-tokens", response_model=List[ShareTokenRead])
+def list_share_tokens(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    rows = session.exec(
+        select(ShareToken).where(ShareToken.created_by == current_user.id)
+    ).all()
+    return [
+        ShareTokenRead(
+            id=r.id,
+            token=r.token,
+            label=r.label,
+            expires_at=r.expires_at,
+            created_at=r.created_at,
+            is_active=r.is_active,
+        )
+        for r in rows
+    ]
+
+
+@app.delete("/share-tokens/{token_id}")
+def revoke_share_token(
+    token_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    row = session.get(ShareToken, token_id)
+    if not row or row.created_by != current_user.id:
+        raise HTTPException(status_code=404, detail="Share token not found")
+    row.is_active = False
+    session.add(row)
+    session.commit()
+    return {"message": "Share token revoked"}
+
+
+@app.get("/api/auth/validate-share-token", response_model=ShareValidateResponse)
+def validate_share_token(
+    token: str = Query(..., description="Share token value"),
+    session: Session = Depends(get_session),
+):
+    row = session.exec(select(ShareToken).where(ShareToken.token == token)).first()
+    now = datetime.utcnow()
+    if (
+        not row
+        or not row.is_active
+        or (row.expires_at is not None and row.expires_at < now)
+    ):
+        return ShareValidateResponse(valid=False, label="")
+    return ShareValidateResponse(valid=True, label=row.label or "")
+
+
 @app.post("/upload")
 async def upload_csv(
     file: UploadFile = File(...),
@@ -291,10 +475,19 @@ async def upload_csv(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can upload")
 
-    # Check for duplicate filename
-    existing = session.exec(select(Dataset).where(Dataset.file_name == file.filename)).first()
-    if existing:
-        raise HTTPException(status_code=400, detail=f"Un archivo con el nombre '{file.filename}' ya existe en el historial.")
+    dup = session.exec(
+        select(Dataset).where(
+            Dataset.file_name == file.filename,
+            Dataset.social_network == network,
+            Dataset.account_name == account_name,
+            Dataset.status == "ready",
+        )
+    ).first()
+    if dup:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya existe un dataset con ese archivo y cuenta. Si querés reimportar, eliminá el dataset anterior primero.",
+        )
 
     # Save raw file
     file_path = os.path.join(UPLOAD_DIR, f"{datetime.now().timestamp()}_{file.filename}")
@@ -316,12 +509,7 @@ async def upload_csv(
     session.refresh(dataset)
 
     # Clean and process
-    if file.filename.endswith(".txt"):
-        success, message, cleaned_count, discarded_count = process_google_maps_txt(file_path, dataset.id, session)
-        dataset.social_network = "google_maps"
-        dataset.source_type = "google_maps"
-    else:
-        success, message, cleaned_count, discarded_count = clean_sprout_csv(file_path, dataset.id, session)
+    success, message, cleaned_count, discarded_count = clean_sprout_csv(file_path, dataset.id, session)
 
     if success:
         dataset.status = "ready"
@@ -348,16 +536,26 @@ async def upload_csv(
 @app.post("/upload-chatbot")
 async def upload_chatbot_csv(
     file: UploadFile = File(...),
+    account_name: str = Form(...),
+    social_network: str = Form("Chatbot"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can upload")
 
-    # Check for duplicate filename
-    existing = session.exec(select(Dataset).where(Dataset.file_name == file.filename)).first()
-    if existing:
-        raise HTTPException(status_code=400, detail=f"Un archivo chatbot con el nombre '{file.filename}' ya existe.")
+    account_clean = (account_name or "").strip()
+    if not account_clean:
+        raise HTTPException(status_code=400, detail="Nombre de cuenta requerido")
+
+    dup_chat = session.exec(
+        select(Dataset).where(Dataset.file_name == file.filename, Dataset.status == "ready")
+    ).first()
+    if dup_chat:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya existe un dataset con ese archivo. Si querés reimportar, eliminá el dataset anterior primero.",
+        )
 
     # Save raw file
     file_path = os.path.join(UPLOAD_DIR, f"chatbot_{datetime.now().timestamp()}_{file.filename}")
@@ -368,8 +566,8 @@ async def upload_chatbot_csv(
     dataset = Dataset(
         file_name=file.filename,
         source_type="Chatbot",
-        social_network="Chatbot",
-        account_name="WhatsApp/Chatbot",
+        social_network=social_network or "Chatbot",
+        account_name=account_clean,
         raw_file_path=file_path,
         status="processing"
     )
@@ -401,185 +599,7 @@ async def upload_chatbot_csv(
     session.commit()
 
     return {"dataset_id": dataset.id, "status": dataset.status, "message": message}
-async def run_google_scrape_task(dataset_id: int, url: str, max_reviews: int):
-    with Session(engine) as session:
-        dataset = session.get(Dataset, dataset_id)
-        if not dataset:
-            return
 
-        try:
-            # 1. Scrape — run as a separate subprocess to avoid macOS sandbox issues with Playwright
-            backend_dir = os.path.dirname(os.path.abspath(__file__))
-            scraper_script = os.path.join(backend_dir, "run_scraper.py")
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable, scraper_script, url, str(max_reviews),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=backend_dir
-            )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
-            
-            # Log any stderr from the scraper to our main log
-            if stderr:
-                print(f"--- Scraper Logs (Dataset {dataset_id}) ---", file=sys.stderr)
-                print(stderr.decode(), file=sys.stderr)
-                print(f"--- End Scraper Logs ---", file=sys.stderr)
-
-            if proc.returncode != 0:
-                error_msg = stderr.decode()[-1000:] if stderr else "Unknown error"
-                raise Exception(f"Scraper subprocess failed with exit code {proc.returncode}: {error_msg}")
-            reviews = json.loads(stdout.decode().strip() or "[]")
-            
-            if not reviews:
-                dataset.status = "failed"
-                log = ImportLog(dataset_id=dataset_id, step_name="scraping", status="failed", message="No reviews found or error during scraping")
-                session.add(log)
-                session.add(dataset)
-                session.commit()
-                return
-
-            # 2. Process and Save
-            success, message, count = process_scraped_reviews(reviews, dataset_id, session)
-            
-            dataset.status = "ready" if success else "failed"
-            dataset.cleaned_rows_count = count
-            
-            log = ImportLog(
-                dataset_id=dataset_id,
-                step_name="processing",
-                status="ready" if success else "failed",
-                message=message
-            )
-            session.add(log)
-            session.add(dataset)
-            session.commit()
-            
-        except Exception as e:
-            dataset.status = "failed"
-            log = ImportLog(dataset_id=dataset_id, step_name="scraping_error", status="failed", message=str(e))
-            session.add(log)
-            session.add(dataset)
-            session.commit()
-
-@app.post("/scrape-google")
-async def scrape_google(
-    request: GoogleScrapeRequest,
-    background_tasks: BackgroundTasks,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
-):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can trigger scraping")
-
-    # Create dataset record
-    dataset = Dataset(
-        file_name=f"Google Sweep - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        social_network="Google",
-        account_name="Google Maps",
-        status="processing",
-        raw_file_path=request.url,
-        uploaded_by=current_user.id
-    )
-    session.add(dataset)
-    session.commit()
-    session.refresh(dataset)
-
-    # Trigger background task
-    background_tasks.add_task(run_google_scrape_task, dataset.id, request.url, request.max_reviews)
-
-    return {"message": "Google scraping started in background", "dataset_id": dataset.id}
-
-async def run_google_maps_bot_task(dataset_id: int, url: str, max_reviews: int = 50):
-    with Session(engine) as session:
-        dataset = session.get(Dataset, dataset_id)
-        if not dataset:
-            return
-
-        try:
-            backend_dir = os.path.dirname(os.path.abspath(__file__))
-            output_filename = f"reseñas_{dataset_id}.txt"
-            output_path = os.path.join(UPLOAD_DIR, output_filename)
-
-            node_bin = shutil.which("node") or "node"
-            proc = await asyncio.create_subprocess_exec(
-                node_bin, "bot.js", url,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=backend_dir,
-                env={**os.environ, "OUTPUT_FILE": output_path, "META_RESENAS": str(max_reviews)}
-            )
-            try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
-            except asyncio.TimeoutError:
-                proc.kill()
-                raise Exception("Node scraper timed out after 10 minutes")
-
-            stderr_text = stderr.decode(errors="replace")
-            if proc.returncode != 0:
-                raise Exception(f"Node scraper failed: {stderr_text}")
-            
-            dataset.status = "ready"
-            dataset.raw_file_path = output_path
-            
-            log = ImportLog(
-                dataset_id=dataset_id,
-                step_name="scraping",
-                status="ready",
-                message=f"Scraping completed. File saved as {output_filename}"
-            )
-            session.add(log)
-            session.add(dataset)
-            session.commit()
-            
-        except Exception as e:
-            dataset.status = "failed"
-            log = ImportLog(dataset_id=dataset_id, step_name="scraping_error", status="failed", message=str(e))
-            session.add(log)
-            session.add(dataset)
-            session.commit()
-
-@app.post("/api/scrape/google-maps")
-@limiter.limit("5/minute")
-async def scrape_google_maps_v2(
-    request: Request,
-    body: GoogleScrapeRequest,
-    background_tasks: BackgroundTasks,
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
-):
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can trigger scraping")
-
-    # Create dataset record
-    dataset = Dataset(
-        file_name=f"Google Maps Scrape - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        social_network="google_maps",
-        account_name="Google Maps Bot",
-        status="processing",
-        raw_file_path="",
-        uploaded_by=current_user.id
-    )
-    session.add(dataset)
-    session.commit()
-    session.refresh(dataset)
-
-    # Trigger background task
-    background_tasks.add_task(run_google_maps_bot_task, dataset.id, body.url, body.max_reviews)
-
-    return {"message": "Google Maps scraping started", "dataset_id": dataset.id}
-
-@app.get("/api/scrape/download/{filename}")
-async def download_scraped_file(filename: str, current_user: User = Depends(get_current_user)):
-    safe_name = os.path.basename(filename)
-    upload_dir_real = os.path.realpath(UPLOAD_DIR)
-    file_path = os.path.realpath(os.path.join(upload_dir_real, safe_name))
-    if not file_path.startswith(upload_dir_real + os.sep) and file_path != upload_dir_real:
-        raise HTTPException(status_code=400, detail="Invalid filename")
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
-
-    from fastapi.responses import FileResponse
-    return FileResponse(file_path, filename=safe_name)
 
 @app.get("/datasets", response_model=List[Dataset])
 def get_datasets(session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
@@ -617,36 +637,65 @@ def delete_dataset(dataset_id: int, session: Session = Depends(get_session), cur
 
 @app.get("/comments", response_model=List[Comment])
 def get_comments(
+    response: Response,
     network: Optional[str] = None,
     account: Optional[str] = None,
     search: Optional[str] = None,
     theme: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    post_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+    limit: Optional[int] = Query(None, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
 ):
-    statement = select(Comment)
+    conditions = []
+
+    if post_id is not None:
+        conditions.append(Comment.post_id == post_id)
+    if session_id is not None:
+        conditions.append(Comment.session_id == session_id)
+
     if start_date:
-        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
+        conditions.append(Comment.comment_date >= datetime.fromisoformat(start_date))
     if end_date:
-        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
+        conditions.append(Comment.comment_date <= datetime.fromisoformat(end_date))
+
     if network:
         network_list = [n.strip() for n in network.split(",") if n.strip()]
         if network_list:
-            statement = statement.where(Comment.network.in_(network_list))
-    else:
-        # EXCLUDE Chatbot by default in the general comments list
-        statement = statement.where(Comment.network != "Chatbot")
-    
+            conditions.append(Comment.network.in_(network_list))
+    elif post_id is None and session_id is None:
+        conditions.append(Comment.network != "Chatbot")
+
     if account:
-        statement = statement.where(Comment.account_name == account)
+        conditions.append(Comment.account_name == account)
     if theme:
-        statement = statement.where(Comment.theme == theme)
+        conditions.append(Comment.theme == theme)
     if search:
-        statement = statement.where(Comment.comment_text.contains(search))
-    
-    return session.exec(statement).all()
+        conditions.append(
+            or_(
+                Comment.comment_text.contains(search),
+                Comment.author_name.contains(search),
+            )
+        )
+
+    stmt = select(Comment)
+    count_stmt = select(func.count(Comment.id))
+    if conditions:
+        stmt = stmt.where(and_(*conditions))
+        count_stmt = count_stmt.where(and_(*conditions))
+
+    stmt = stmt.order_by(Comment.comment_date.desc())
+
+    total = session.exec(count_stmt).one()
+    if limit is not None:
+        response.headers["X-Total-Count"] = str(total)
+        stmt = stmt.offset(offset).limit(limit)
+
+    return session.exec(stmt).all()
 
 @app.patch("/comments/{comment_id}/tags")
 def update_comment_tags(
@@ -1015,10 +1064,91 @@ def get_theme_report(
         "details": problems # For the vertical problem cards
     }
 
+
+@app.post("/analytics/theme-summary")
+def post_theme_summary(
+    theme: str = Query(..., description="Theme name to analyze"),
+    dataset_id: Optional[int] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    statement = (
+        select(Comment)
+        .join(Dataset)
+        .where(Dataset.status == "ready")
+        .where(Comment.theme == theme)
+    )
+    if dataset_id is not None:
+        statement = statement.where(Dataset.id == dataset_id)
+    if start_date:
+        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
+    if end_date:
+        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
+    # Misma lógica que get_theme_report sin filtro network: excluir Chatbot
+    statement = statement.where(Dataset.source_type != "Chatbot")
+
+    statement = statement.order_by(Comment.comment_date.desc()).limit(100)
+    comments = session.exec(statement).all()
+
+    texts = [c.comment_text.strip() for c in comments if c.comment_text and c.comment_text.strip()]
+    n = len(texts)
+    if n == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No hay comentarios para el tema «{theme}» en este periodo.",
+        )
+
+    if not GEMINI_API_KEY_VALUE:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Falta clave de la API de Gemini. En backend/.env definí GEMINI_API_KEY o GOOGLE_API_KEY "
+                "(clave de Google AI Studio) y reiniciá el servidor."
+            ),
+        )
+
+    prompt = (
+        "Actuá como analista de experiencia de usuario e investigación cualitativa, "
+        "redactando para un equipo de producto, comunicación y atención al usuario. "
+        "Tu lectura debe ser profunda y honesta: no alines forzosamente todo a una conclusión positiva.\n\n"
+        f"Dataset: {n} comentarios públicos clasificados bajo el tema «{theme}». "
+        "Leé el lenguaje literal y también lo que implica (necesidades, miedos, expectativas incumplidas, "
+        "confusión, alivio, reclamo).\n\n"
+        "En español, generá un informe con esta estructura (podés usar ## para títulos):\n"
+        "## Panorama\n"
+        "2–4 oraciones que sinteticen qué está pasando en la voz del usuario respecto de este tema.\n"
+        "## Lo que los usuarios están tratando de resolver\n"
+        "Inferí intenciones y jobs-to-be-done; diferenciá dudas operativas vs. problemas de valor o confianza.\n"
+        "## Fricciones y señales de riesgo para la experiencia\n"
+        "Patrones de confusión, demoras, calidad percibida, comparaciones, desconfianza —solo si emergen del texto.\n"
+        "## Tono y clima emocional\n"
+        "Matices (no solo «positivo/negativo»): frustración, esperanza, neutralidad operativa, etc.\n"
+        "## Lectura UX priorizada\n"
+        "3–5 insights accionables para mejorar producto, contenidos o canales; indicá prioridad relativa (alta/media/baja) "
+        "según frecuencia o gravedad implícita en los comentarios.\n\n"
+        "Reglas: basate solo en estos mensajes; si algo no se desprende del texto, decilo explícitamente. "
+        "Evitá jerga vacía y bullet lists sin contenido.\n\n"
+        "Comentarios:\n"
+        + "\n".join(texts)
+    )
+
+    try:
+        genai.configure(api_key=GEMINI_API_KEY_VALUE)
+        model = genai.GenerativeModel(GEMINI_GENERATION_MODEL)
+        resp = model.generate_content(prompt)
+        summary_str = (getattr(resp, "text", None) or "").strip()
+        if not summary_str:
+            raise RuntimeError("Respuesta vacía del modelo")
+        return {"summary": summary_str, "comments_analyzed": n, "theme": theme}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def _get_representative_quotes(comments, pattern_keywords):
     scored = []
     seen_texts = set()
-    unique_quotes = []
     for c in comments:
         norm = _normalize_text(c.comment_text)
         if norm in seen_texts:
@@ -1027,10 +1157,10 @@ def _get_representative_quotes(comments, pattern_keywords):
         if score > 0:
             seen_texts.add(norm)
             scored.append((score, c.author_name, c.comment_text))
-    
-    # Sort by score and length
+
     scored.sort(key=lambda x: (x[0], len(x[2])), reverse=True)
     return [{"author": s[1], "text": s[2]} for s in scored[:3]]
+
 
 @app.get("/analytics/consolidated-report")
 def get_consolidated_report(
@@ -1132,6 +1262,82 @@ def get_consolidated_report(
         "top_problems": problems,
         "feedback_insights": feedback_signals
     }
+
+
+@app.post("/analytics/consolidated-summary")
+def post_consolidated_summary(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    network: Optional[str] = Query(None),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Informe ejecutivo en texto (Gemini) a partir del mismo dataset que el reporte consolidado."""
+    report = get_consolidated_report(
+        network=network,
+        start_date=start_date,
+        end_date=end_date,
+        session=session,
+        current_user=current_user,
+    )
+    if not isinstance(report, dict):
+        raise HTTPException(status_code=500, detail="Respuesta de reporte inválida")
+    err = report.get("error")
+    if err:
+        raise HTTPException(status_code=400, detail=str(err))
+
+    if not GEMINI_API_KEY_VALUE:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Falta clave de la API de Gemini. En backend/.env definí GEMINI_API_KEY o GOOGLE_API_KEY "
+                "(clave de Google AI Studio) y reiniciá el servidor."
+            ),
+        )
+
+    payload = json.dumps(report, ensure_ascii=False, indent=2)
+    if len(payload) > 120_000:
+        payload = payload[:120_000] + "\n…[truncado]"
+
+    prompt = (
+        "Actuá como analista de experiencia de usuario y social listening, "
+        "con criterio de investigación cualitativa + métricas. Vas a presentar esto a liderazgo de producto y CX.\n\n"
+        "Debajo tenés un JSON agregado (metadata, summary, distribution, topics, trends, top_problems, feedback_insights). "
+        "No copies el JSON ni hagas un inventario seco de números: interpretá qué significan para la experiencia del usuario "
+        "y para la operación en redes.\n\n"
+        "Redactá en español un informe coherente y con profundidad, usando ## para secciones. Incluí, en el orden que mejor "
+        "cuente la historia:\n"
+        "- **Apertura analítica**: en 3–5 oraciones, qué está pasando en el período (volumen, diversidad de redes/autores, "
+        "lectura global del clima).\n"
+        "- **Distribución y territorio de conversación**: qué canales concentran qué tipo de conversación y qué implica "
+        "para dónde hay que escuchar y responder.\n"
+        "- **Temas y narrativa de usuario**: cómo se reparten los temas; qué necesidades o tensiones sugiere esa mezcla "
+        "(conectá topics con summary/top_words solo como apoyo, no como listado).\n"
+        "- **Evolución temporal**: si trends aporta señal, contá si hay concentración, picos o calma; si es ruido o poco "
+        "datos, decilo con transparencia.\n"
+        "- **Soporte, fricción y feedback**: integrá top_problems y feedback_insights; si vienen vacíos, explicá qué eso "
+        "sugiere (p. ej. poco volumen en categorías profundas) sin inventar problemas.\n"
+        "- **Implicancias UX y próximos pasos**: 4–7 recomendaciones accionables, priorizadas, alineadas al JSON; "
+        "indicá para quién son (producto, contenido, community management, soporte).\n\n"
+        "Tono: profesional, directo, sin marketing. No inventes cifras ni hechos que no estén en los datos. "
+        "Si algo no se puede concluir, reconocelo.\n\n"
+        "Datos:\n"
+        + payload
+    )
+
+    try:
+        genai.configure(api_key=GEMINI_API_KEY_VALUE)
+        model = genai.GenerativeModel(GEMINI_GENERATION_MODEL)
+        resp = model.generate_content(prompt)
+        summary_str = (getattr(resp, "text", None) or "").strip()
+        if not summary_str:
+            raise RuntimeError("Respuesta vacía del modelo")
+        return {"summary": summary_str}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/analytics/send-report")
 async def send_report(

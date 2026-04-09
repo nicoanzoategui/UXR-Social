@@ -1,14 +1,32 @@
 import os
 import sys
+from pathlib import Path
 from dotenv import load_dotenv
 from sqlmodel import SQLModel, create_engine, Session
 
 # Load environment variables
 load_dotenv()
 
-# Determine database URL: check for environment variable 'DATABASE_URL'
-# Default to local SQLite for development
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./social_analytics.db")
+_BACKEND_DIR = Path(__file__).resolve().parent
+
+
+def _resolve_database_url() -> str:
+    """SQLite URLs relative to cwd break when uvicorn is started outside backend/. Anchor to this package."""
+    raw = os.getenv("DATABASE_URL", "").strip()
+    if not raw:
+        return f"sqlite:///{(_BACKEND_DIR / 'social_analytics.db').as_posix()}"
+    if raw.startswith("sqlite:///"):
+        rest = raw[len("sqlite:///") :]
+        if rest == ":memory:":
+            return raw
+        path = Path(rest)
+        if not path.is_absolute():
+            resolved = (_BACKEND_DIR / path).resolve()
+            return f"sqlite:///{resolved.as_posix()}"
+    return raw
+
+
+DATABASE_URL = _resolve_database_url()
 
 if os.getenv("ENVIRONMENT") == "production" and DATABASE_URL.startswith("sqlite"):
     print("WARNING: Using SQLite in a production environment is not recommended.", file=sys.stderr)

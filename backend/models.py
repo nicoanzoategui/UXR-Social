@@ -55,3 +55,13 @@ class ImportLog(SQLModel, table=True):
     status: str
     message: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ShareToken(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    token: str = Field(unique=True, index=True)
+    created_by: int = Field(foreign_key="user.id")
+    label: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    is_active: bool = True

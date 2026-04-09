@@ -13,12 +13,14 @@ Base de Datos       → Supabase / Neon (PostgreSQL)
 
 ## Credenciales de Acceso
 
-| Rol | Usuario | Contraseña | Acceso |
-|-----|---------|------------|--------|
-| Administrador | `nicolas` | `SocialSense2026!` | Backoffice + Analytics |
-| Analista | `analyst` | `Analytics2026#` | Solo Analytics |
+| Rol | Usuario | Contraseña (ejemplo dev) | Acceso |
+|-----|---------|--------------------------|--------|
+| Administrador | `nicolas` | Misma para ambos: definida en `SEED_SHARED_PASSWORD` (ej. `PlataformaDev2026!`) | Backoffice + Analytics |
+| Analista | `analyst` | *(la misma)* | Solo Analytics (rol API `viewer`) |
 
-> **IMPORTANTE:** Cambia estas contraseñas en producción usando `ADMIN_PASSWORD` y `ANALYST_PASSWORD` en las variables de entorno del backend.
+En el backend, configurá **`SEED_SHARED_PASSWORD`** en las variables de entorno para que admin y analista compartan contraseña. Si preferís contraseñas distintas, no definas `SEED_SHARED_PASSWORD` y usá `ADMIN_PASSWORD` y `ANALYST_PASSWORD` por separado. Al arrancar, la API actualiza el hash en base de datos si la contraseña del entorno ya no coincide (útil tras cambiar el `.env`).
+
+> **IMPORTANTE:** En producción usá un valor fuerte en `SEED_SHARED_PASSWORD` (o contraseñas separadas) y no reutilices el ejemplo de desarrollo.
 
 ---
 
@@ -53,9 +55,9 @@ Base de Datos       → Supabase / Neon (PostgreSQL)
    | `FRONTEND_URL` | `https://tu-analytics.vercel.app,https://tu-backoffice.vercel.app` |
    | `ENVIRONMENT` | `production` |
    | `ADMIN_USERNAME` | `nicolas` |
-   | `ADMIN_PASSWORD` | *(contraseña segura)* |
    | `ANALYST_USERNAME` | `analyst` |
-   | `ANALYST_PASSWORD` | *(contraseña segura)* |
+   | `SEED_SHARED_PASSWORD` | *(misma contraseña segura para ambos; recomendado)* |
+   | `ADMIN_PASSWORD` / `ANALYST_PASSWORD` | *(solo si no usás `SEED_SHARED_PASSWORD`)* |
    | `ANTHROPIC_API_KEY` | `sk-ant-...` |
    | `MAIL_USERNAME` | tu correo Gmail |
    | `MAIL_PASSWORD` | app password de Gmail |
@@ -104,7 +106,7 @@ FRONTEND_URL=https://analytics.vercel.app,https://backoffice.vercel.app
 - [ ] `SECRET_KEY` es una cadena aleatoria (no el valor de ejemplo)
 - [ ] `DATABASE_URL` apunta a PostgreSQL (no SQLite)
 - [ ] `ENVIRONMENT=production` está seteado en el backend
-- [ ] `ADMIN_PASSWORD` y `ANALYST_PASSWORD` son contraseñas seguras
+- [ ] `SEED_SHARED_PASSWORD` (o `ADMIN_PASSWORD` / `ANALYST_PASSWORD`) son contraseñas seguras
 - [ ] `FRONTEND_URL` contiene solo los dominios de producción
 - [ ] HTTPS está activo en todos los servicios (Vercel y Render lo hacen automáticamente)
 - [ ] Las cookies `access_token` son `secure=True` (automático con `ENVIRONMENT=production`)

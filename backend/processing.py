@@ -2,9 +2,7 @@ import pandas as pd
 from datetime import datetime
 import os
 import json
-import re
 import unicodedata
-from typing import List, Dict
 from models import Comment, Dataset
 from sqlmodel import Session
 
@@ -177,39 +175,6 @@ def clean_sprout_csv(file_path: str, dataset_id: int, session: Session):
         print(traceback.format_exc())
         session.rollback()
         return False, str(e), 0, 0
-def process_scraped_reviews(reviews: List[Dict], dataset_id: int, session: Session):
-    try:
-        comments = []
-        for row in reviews:
-            text = row.get('comment_text', '')
-            # Try to parse date string if possible, otherwise use now
-            # Google dates are relative ("2 days ago"), we'll just use current time for now
-            # as parsing relative dates reliably is complex without extra libs.
-            # But the Comment model requires a datetime.
-            
-            comment = Comment(
-                dataset_id=dataset_id,
-                network="Google",
-                account_name=row.get('account_name', 'Google Maps'),
-                post_id=row.get('post_id', ''),
-                post_text="",
-                post_url="",
-                comment_id=row.get('comment_id', str(datetime.now().timestamp())),
-                comment_text=text,
-                author_name=row.get('author_name', 'Anonymous'),
-                comment_date=datetime.now(), # Simplified
-                message_type="Review",
-                reply_status="received",
-                theme=classify_theme(text)
-            )
-            comments.append(comment)
-            session.add(comment)
-        
-        session.commit()
-        return True, "Success", len(comments)
-    except Exception as e:
-        session.rollback()
-        return False, str(e), 0
 
 def process_chatbot_csv(file_path: str, dataset_id: int, session: Session):
     try:
@@ -283,82 +248,6 @@ def process_chatbot_csv(file_path: str, dataset_id: int, session: Session):
     except Exception as e:
         import traceback
         print(f"ERROR: process_chatbot_csv failed: {e}")
-        traceback.print_exc()
-        session.rollback()
-        return False, str(e), 0, 0
-
-def process_google_maps_txt(file_path: str, dataset_id: int, session: Session):
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Split content into blocks based on "--- N. Autor (X estrellas) DATE ---"
-        blocks = re.split(r'\n(?=--- \d+\. )', content)
-        if len(blocks) == 1 and not blocks[0].startswith("---"):
-             # Handle case where split didn't happen as expected (e.g. single review)
-             if content.strip().startswith("---"):
-                 blocks = [content.strip()]
-             else:
-                 return False, "Formato de archivo inválido", 0, 0
-        
-        comments_count = 0
-        for block in blocks:
-            if not block.strip():
-                continue
-                
-            lines = block.strip().split('\n')
-            header = lines[0]
-            
-            # Parse header: --- 1. Author Name (5 estrellas) 2 weeks ago ---
-            match = re.search(r'--- \d+\. (.+?) \((\d+) estrellas\) (.*?) ---', header)
-            if match:
-                author_name = match.group(1)
-                rating = int(match.group(2))
-                # date_str = match.group(3)
-            else:
-                author_name = "Anonymous"
-                rating = None
-
-            # The rest of the block is text and optional owner reply
-            text_lines = []
-            owner_reply = None
-            
-            for line in lines[1:]:
-                if "[Respuesta:]" in line:
-                    owner_reply = line.split("[Respuesta:]")[-1].strip()
-                else:
-                    text_lines.append(line)
-            
-            comment_text = "\n".join(text_lines).strip()
-            if not comment_text:
-                comment_text = "(sin texto)"
-            
-            # Generate a more stable comment_id if possible, or just unique
-            import hashlib
-            block_hash = hashlib.md5(block.encode()).hexdigest()[:10]
-            
-            comment = Comment(
-                dataset_id=dataset_id,
-                network="google_maps",
-                account_name="Google Maps",
-                comment_id=f"gm_{dataset_id}_{block_hash}",
-                comment_text=comment_text,
-                author_name=author_name,
-                comment_date=datetime.now(),
-                message_type="Review",
-                reply_status="received",
-                rating=rating,
-                owner_reply=owner_reply,
-                theme=classify_theme(comment_text)
-            )
-            session.add(comment)
-            comments_count += 1
-            
-        session.commit()
-        return True, f"Se procesaron {comments_count} reseñas de Google Maps", comments_count, 0
-    except Exception as e:
-        import traceback
-        print(f"ERROR processing google maps txt: {e}")
         traceback.print_exc()
         session.rollback()
         return False, str(e), 0, 0

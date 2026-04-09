@@ -26,8 +26,12 @@ export default function RootLayout({
   const isLoginPage = pathname === "/login";
 
   return (
-    <html lang="en" className={`${inter.variable} ${merriweather.variable}`}>
-      <body>
+    <html
+      lang="en"
+      className={`${inter.variable} ${merriweather.variable}`}
+      suppressHydrationWarning
+    >
+      <body suppressHydrationWarning>
         <AuthGuard>
           <div className="flex min-h-screen bg-[var(--color-bg-page)]">
             {!isLoginPage && <Sidebar />}

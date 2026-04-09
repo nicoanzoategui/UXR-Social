@@ -1,19 +1,41 @@
 import axios from "axios";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
-if (!API_BASE_URL && typeof window !== "undefined") {
-    console.error("NEXT_PUBLIC_API_URL is not set. API calls will fail.");
+const ACCESS_TOKEN_KEY = "access_token";
+
+/** Misma familia de sitio que el front (127.0.0.1 vs localhost) para cookies SameSite=Lax + CORS. */
+export function resolveApiBaseUrl(): string {
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL;
+    }
+    if (typeof window !== "undefined" && window.location.hostname === "127.0.0.1") {
+        return "http://127.0.0.1:8000";
+    }
+    return "http://localhost:8000";
 }
 
 export const api = axios.create({
-    baseURL: API_BASE_URL || "http://localhost:8000",
     withCredentials: true,
+});
+
+api.interceptors.request.use((config) => {
+    config.baseURL = resolveApiBaseUrl();
+    const method = String(config.method || "get").toLowerCase();
+    const path = String(config.url || "").replace(/\/$/, "") || "/";
+    const isLoginPost = method === "post" && path === "/token";
+    if (typeof window !== "undefined" && !isLoginPost) {
+        const t = sessionStorage.getItem(ACCESS_TOKEN_KEY);
+        if (t) {
+            config.headers.set("Authorization", `Bearer ${t}`);
+        }
+    }
+    return config;
 });
 
 api.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response?.status === 401 && typeof window !== "undefined") {
+            sessionStorage.removeItem(ACCESS_TOKEN_KEY);
             localStorage.removeItem("isLoggedIn");
             localStorage.removeItem("role");
             window.location.href = "/login";
@@ -23,11 +45,18 @@ api.interceptors.response.use(
 );
 
 export const login = async (username: string, password: string) => {
+    if (typeof window !== "undefined") {
+        sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    }
     const formData = new URLSearchParams();
     formData.append("username", username);
     formData.append("password", password);
     const response = await api.post("/token", formData);
-    return response.data;
+    const data = response.data;
+    if (typeof window !== "undefined" && data?.access_token) {
+        sessionStorage.setItem(ACCESS_TOKEN_KEY, data.access_token);
+    }
+    return data;
 };
 
 export const getSummary = async (params = {}) => {
@@ -56,7 +85,7 @@ export const getThemeReport = async (params = {}) => {
 };
 
 export const getFullReport = async (params = {}) => {
-    const response = await api.get("/analytics/full-report", { params });
+    const response = await api.get("/analytics/consolidated-report", { params });
     return response.data;
 };
 
@@ -112,6 +141,9 @@ export const getMe = async () => {
 
 export const logout = async () => {
     await api.post("/api/auth/logout");
+    if (typeof window !== "undefined") {
+        sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    }
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("role");
 };
