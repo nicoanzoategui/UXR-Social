@@ -22,8 +22,12 @@ const stepCircleStyle = { background: "#f1f1ef", color: "#37352f" };
 const cardClass =
   "rounded-xl border border-[var(--color-border-soft)] bg-white p-6 sm:p-8";
 
+type DateScope = "comment_date" | "dataset_upload";
+
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
+  /** Por defecto alineamos con el historial de subidas; el CSV grande suele tener mensajes fuera del rango del calendario. */
+  const [dateScope, setDateScope] = useState<DateScope>("dataset_upload");
   const [emails, setEmails] = useState<string[]>([]);
   const [currentEmail, setCurrentEmail] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -48,7 +52,7 @@ export default function ReportsPage() {
     setConsolidatedSummary(null);
     setConsolidatedError(null);
     setConsolidatedVisible(false);
-  }, [dateRange.start, dateRange.end]);
+  }, [dateRange.start, dateRange.end, dateScope]);
 
   useEffect(() => {
     if (!dateRange.start || !dateRange.end) {
@@ -62,6 +66,8 @@ export default function ReportsPage() {
         const data = await getTopics({
           start_date: dateRange.start,
           end_date: dateRange.end,
+          include_chatbot: true,
+          date_scope: dateScope,
         });
         if (!cancelled) setTopics(data || []);
       } catch {
@@ -73,7 +79,7 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [dateRange.start, dateRange.end]);
+  }, [dateRange.start, dateRange.end, dateScope]);
 
   const handleThemeSummary = async (themeName: string) => {
     if (!dateRange.start || !dateRange.end) return;
@@ -92,6 +98,8 @@ export default function ReportsPage() {
             theme: themeName,
             start_date: dateRange.start,
             end_date: dateRange.end,
+            include_chatbot: true,
+            date_scope: dateScope,
           },
         }
       );
@@ -131,6 +139,8 @@ export default function ReportsPage() {
           params: {
             start_date: dateRange.start,
             end_date: dateRange.end,
+            include_chatbot: true,
+            date_scope: dateScope,
           },
         }
       );
@@ -181,6 +191,8 @@ export default function ReportsPage() {
       const reportData = await getFullReport({
         start_date: dateRange.start,
         end_date: dateRange.end,
+        include_chatbot: true,
+        date_scope: dateScope,
       });
 
       setLoadingStep("Enviando emails...");
@@ -250,6 +262,38 @@ export default function ReportsPage() {
             />
           </div>
         </div>
+        <fieldset className="mt-6 space-y-2 border-0 p-0">
+          <legend className="text-xs font-semibold text-[var(--color-text-muted)]">
+            ¿Qué fechas usamos para armar el período?
+          </legend>
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text-body)]">
+            <input
+              type="radio"
+              name="date-scope"
+              checked={dateScope === "dataset_upload"}
+              onChange={() => setDateScope("dataset_upload")}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-semibold">Fecha de subida del archivo</span> — coincide con el historial de
+              sincronización. Incluye todos los mensajes de los CSV subidos en el rango (recomendado si el export trae
+              conversaciones de meses anteriores).
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text-body)]">
+            <input
+              type="radio"
+              name="date-scope"
+              checked={dateScope === "comment_date"}
+              onChange={() => setDateScope("comment_date")}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-semibold">Fecha del mensaje en el CSV</span> — solo comentarios cuya fecha de
+              interacción cae entre Desde y Hasta.
+            </span>
+          </label>
+        </fieldset>
       </section>
 
       {/* ② Resultados */}

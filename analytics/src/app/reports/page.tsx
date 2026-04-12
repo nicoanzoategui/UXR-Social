@@ -58,7 +58,9 @@ export default function ReportsPage() {
       setLoadingStep("Generando reporte...");
       const reportData = await getFullReport({
         start_date: dateRange.start,
-        end_date: dateRange.end
+        end_date: dateRange.end,
+        include_chatbot: true,
+        date_scope: "dataset_upload",
       });
 
       setLoadingStep("Enviando emails...");

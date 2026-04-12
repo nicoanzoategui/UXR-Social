@@ -47,6 +47,63 @@ if GEMINI_API_KEY_VALUE:
 # generateContent: los alias gemini-1.5-* ya no están en v1beta; default alineado con la doc actual de Google AI.
 GEMINI_GENERATION_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
+
+def _parse_range_start(start_date: Optional[str]) -> Optional[datetime]:
+    """Inicio inclusivo del día para filtros YYYY-MM-DD desde <input type=\"date\">."""
+    if not start_date or not str(start_date).strip():
+        return None
+    s = str(start_date).strip()
+    dt = datetime.fromisoformat(s.replace("Z", "+00:00").split("+")[0])
+    if "T" not in s and len(s) <= 10:
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return dt
+
+
+def _parse_range_end(end_date: Optional[str]) -> Optional[datetime]:
+    """Fin inclusivo del día (23:59:59) para que el último día del rango no quede vacío."""
+    if not end_date or not str(end_date).strip():
+        return None
+    s = str(end_date).strip()
+    dt = datetime.fromisoformat(s.replace("Z", "+00:00").split("+")[0])
+    if "T" not in s and len(s) <= 10:
+        return dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return dt
+
+
+def _analytics_exclude_chatbot(include_chatbot: bool, network: Optional[str]) -> bool:
+    """Misma lógica histórica: sin filtro de red, se excluyen datasets Chatbot salvo include_chatbot."""
+    if include_chatbot:
+        return False
+    if network and str(network).strip():
+        return False
+    return True
+
+
+def _normalize_date_scope(raw: Optional[str]) -> str:
+    """comment_date = mensaje en el CSV; dataset_upload = cuándo se subió el archivo (uploaded_at)."""
+    v = (raw or "comment_date").strip().lower()
+    if v in ("dataset_upload", "upload", "subida", "archivo"):
+        return "dataset_upload"
+    return "comment_date"
+
+
+def _apply_date_scope_filter(statement, start_date: Optional[str], end_date: Optional[str], date_scope: Optional[str]):
+    scope = _normalize_date_scope(date_scope)
+    ds = _parse_range_start(start_date)
+    de = _parse_range_end(end_date)
+    if scope == "dataset_upload":
+        if ds:
+            statement = statement.where(Dataset.uploaded_at >= ds)
+        if de:
+            statement = statement.where(Dataset.uploaded_at <= de)
+    else:
+        if ds:
+            statement = statement.where(Comment.comment_date >= ds)
+        if de:
+            statement = statement.where(Comment.comment_date <= de)
+    return statement
+
+
 class TagUpdate(BaseModel):
     tags: str
 
@@ -658,10 +715,12 @@ def get_comments(
     if session_id is not None:
         conditions.append(Comment.session_id == session_id)
 
-    if start_date:
-        conditions.append(Comment.comment_date >= datetime.fromisoformat(start_date))
-    if end_date:
-        conditions.append(Comment.comment_date <= datetime.fromisoformat(end_date))
+    ds = _parse_range_start(start_date)
+    if ds:
+        conditions.append(Comment.comment_date >= ds)
+    de = _parse_range_end(end_date)
+    if de:
+        conditions.append(Comment.comment_date <= de)
 
     if network:
         network_list = [n.strip() for n in network.split(",") if n.strip()]
@@ -719,6 +778,8 @@ def get_summary(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     network: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session), 
     current_user: User = Depends(get_current_user)
 ):
@@ -730,19 +791,12 @@ def get_summary(
         network_list = [n.strip() for n in network.split(",") if n.strip()]
         if network_list:
             statement = statement.where(Comment.network.in_(network_list))
-    else:
+    elif _analytics_exclude_chatbot(include_chatbot, network):
         # DEFAULT: Exclude Chatbot from general analytics
         statement = statement.where(Dataset.source_type != "Chatbot")
-        
-    if start_date:
-        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
-    if end_date:
-        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
-    if network:
-        network_list = [n.strip() for n in network.split(",") if n.strip()]
-        if network_list:
-            statement = statement.where(Comment.network.in_(network_list))
-        
+
+    statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
+
     comments = session.exec(statement).all()
     total_comments = len(comments)
 
@@ -819,19 +873,18 @@ def get_trends(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     network: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session), 
     current_user: User = Depends(get_current_user)
 ):
     statement = select(Comment).join(Dataset).where(Dataset.status == "ready")
-    if start_date:
-        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
-    if end_date:
-        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
+    statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
     if network:
         network_list = [n.strip() for n in network.split(",") if n.strip()]
         if network_list:
             statement = statement.where(Comment.network.in_(network_list))
-    else:
+    elif _analytics_exclude_chatbot(include_chatbot, network):
         # DEFAULT: Exclude Chatbot
         statement = statement.where(Dataset.source_type != "Chatbot")
         
@@ -851,19 +904,18 @@ def get_distribution(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     network: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session), 
     current_user: User = Depends(get_current_user)
 ):
     statement = select(Comment).join(Dataset).where(Dataset.status == "ready")
-    if start_date:
-        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
-    if end_date:
-        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
+    statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
     if network:
         network_list = [n.strip() for n in network.split(",") if n.strip()]
         if network_list:
             statement = statement.where(Comment.network.in_(network_list))
-    else:
+    elif _analytics_exclude_chatbot(include_chatbot, network):
         # DEFAULT: Exclude Chatbot
         statement = statement.where(Dataset.source_type != "Chatbot")
         
@@ -886,19 +938,18 @@ def get_topics(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
     network: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session), 
     current_user: User = Depends(get_current_user)
 ):
     statement = select(Comment).join(Dataset).where(Dataset.status == "ready")
-    if start_date:
-        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
-    if end_date:
-        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
+    statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
     if network:
         network_list = [n.strip() for n in network.split(",") if n.strip()]
         if network_list:
             statement = statement.where(Comment.network.in_(network_list))
-    else:
+    elif _analytics_exclude_chatbot(include_chatbot, network):
         # DEFAULT: Exclude Chatbot
         statement = statement.where(Dataset.source_type != "Chatbot")
         
@@ -974,21 +1025,20 @@ def get_theme_report(
     network: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
     # 1. Query Comments for the Specific Theme
     statement = select(Comment).join(Dataset).where(Dataset.status == "ready").where(Comment.theme == theme)
-    if start_date:
-        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
-    if end_date:
-        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
-    
+    statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
+
     if network:
         network_list = [n.strip() for n in network.split(",") if n.strip()]
         if network_list:
             statement = statement.where(Comment.network.in_(network_list))
-    else:
+    elif _analytics_exclude_chatbot(include_chatbot, network):
         statement = statement.where(Dataset.source_type != "Chatbot")
         
     comments = session.exec(statement).all()
@@ -1071,6 +1121,8 @@ def post_theme_summary(
     dataset_id: Optional[int] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -1082,12 +1134,9 @@ def post_theme_summary(
     )
     if dataset_id is not None:
         statement = statement.where(Dataset.id == dataset_id)
-    if start_date:
-        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
-    if end_date:
-        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
-    # Misma lógica que get_theme_report sin filtro network: excluir Chatbot
-    statement = statement.where(Dataset.source_type != "Chatbot")
+    statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
+    if _analytics_exclude_chatbot(include_chatbot, None):
+        statement = statement.where(Dataset.source_type != "Chatbot")
 
     statement = statement.order_by(Comment.comment_date.desc()).limit(100)
     comments = session.exec(statement).all()
@@ -1167,23 +1216,22 @@ def get_consolidated_report(
     network: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user)
 ):
     # 1. Base Query
     statement = select(Comment).join(Dataset).where(Dataset.status == "ready")
-    if start_date:
-        statement = statement.where(Comment.comment_date >= datetime.fromisoformat(start_date))
-    if end_date:
-        statement = statement.where(Comment.comment_date <= datetime.fromisoformat(end_date))
-    
+    statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
+
     if network:
         network_list = [n.strip() for n in network.split(",") if n.strip()]
         if network_list:
             statement = statement.where(Comment.network.in_(network_list))
-    else:
+    elif _analytics_exclude_chatbot(include_chatbot, network):
         statement = statement.where(Dataset.source_type != "Chatbot")
-        
+
     all_comments = session.exec(statement).all()
     total_comments = len(all_comments)
     
@@ -1191,9 +1239,33 @@ def get_consolidated_report(
         return {"error": "No data found for the selected period."}
 
     # 2. Summary Stats & Trends
-    summary = get_summary(start_date, end_date, network, session, current_user)
-    distribution = get_distribution(start_date, end_date, network, session, current_user)
-    trends = get_trends(start_date, end_date, network, session, current_user)
+    summary = get_summary(
+        start_date,
+        end_date,
+        network,
+        include_chatbot=include_chatbot,
+        date_scope=date_scope,
+        session=session,
+        current_user=current_user,
+    )
+    distribution = get_distribution(
+        start_date,
+        end_date,
+        network,
+        include_chatbot=include_chatbot,
+        date_scope=date_scope,
+        session=session,
+        current_user=current_user,
+    )
+    trends = get_trends(
+        start_date,
+        end_date,
+        network,
+        include_chatbot=include_chatbot,
+        date_scope=date_scope,
+        session=session,
+        current_user=current_user,
+    )
     
     # 3. Categorized Analysis
     categories = {}
@@ -1269,6 +1341,8 @@ def post_consolidated_summary(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     network: Optional[str] = Query(None),
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -1277,6 +1351,8 @@ def post_consolidated_summary(
         network=network,
         start_date=start_date,
         end_date=end_date,
+        include_chatbot=include_chatbot,
+        date_scope=date_scope,
         session=session,
         current_user=current_user,
     )
