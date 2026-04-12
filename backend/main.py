@@ -27,6 +27,7 @@ from reportlab.lib import colors
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
 import io
 import json
+from html import escape
 import google.generativeai as genai
 
 from database import engine, create_db_and_tables, get_session
@@ -177,13 +178,22 @@ class PDFGenerator:
         
         # Summary Section
         elements.append(Paragraph("Resumen General", header_style))
-        s = data.get("summary", {})
-        summary_data = [
-            ["Métrica", "Valor"],
-            ["Total Comentarios", str(s.get("total_comments", 0))],
-            ["Menciones Positivas", str(s.get("positive_mentions", 0))],
-            ["Temas Únicos", str(s.get("unique_themes", 0))]
-        ]
+        s = data.get("summary", {}) or {}
+        if isinstance(s, dict) and ("positive_mentions" in s or "unique_themes" in s):
+            summary_data = [
+                ["Métrica", "Valor"],
+                ["Total Comentarios", str(s.get("total_comments", 0))],
+                ["Menciones Positivas", str(s.get("positive_mentions", 0))],
+                ["Temas Únicos", str(s.get("unique_themes", 0))],
+            ]
+        else:
+            summary_data = [
+                ["Métrica", "Valor"],
+                ["Total comentarios", str(s.get("total_comments", 0))],
+                ["Autores únicos", str(s.get("unique_authors", 0))],
+                ["Redes activas", str(s.get("active_networks", 0))],
+                ["Promedio comentarios/día", str(s.get("avg_per_day", 0))],
+            ]
         t = Table(summary_data, colWidths=[200, 100])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
@@ -200,8 +210,10 @@ class PDFGenerator:
         elements.append(Paragraph("Distribución de Temas", header_style))
         topics = data.get("topics", [])
         topic_table_data = [["Tema", "Comentarios"]]
-        for topic in topics[:10]: # Top 10
-             topic_table_data.append([topic.get("name", "N/A"), str(topic.get("value", 0))])
+        for topic in topics[:10]:  # Top 10
+            label = topic.get("name") or topic.get("topic") or "N/A"
+            val = topic.get("value") if topic.get("value") is not None else topic.get("count", 0)
+            topic_table_data.append([str(label), str(val)])
         
         if len(topic_table_data) > 1:
             t_topics = Table(topic_table_data, colWidths=[200, 100])
@@ -219,6 +231,110 @@ class PDFGenerator:
         doc.build(elements)
         buffer.seek(0)
         return buffer.getvalue()
+
+    @staticmethod
+    def generate_theme(data: dict, theme: str, start_date: str, end_date: str) -> bytes:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=72,
+            leftMargin=72,
+            topMargin=72,
+            bottomMargin=72,
+        )
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            "ThemePdfTitle",
+            parent=styles["Heading1"],
+            fontSize=22,
+            spaceAfter=14,
+            textColor=colors.HexColor("#1e293b"),
+        )
+        header_style = ParagraphStyle(
+            "ThemePdfHeader",
+            parent=styles["Heading2"],
+            fontSize=14,
+            spaceBefore=16,
+            spaceAfter=8,
+            textColor=colors.HexColor("#4f46e5"),
+        )
+        meta = data.get("metadata") or {}
+        summ = data.get("summary") or {}
+        elements = []
+        period_label = meta.get("period") or f"{start_date or '—'} a {end_date or '—'}"
+        elements.append(Paragraph(f"UXR Social — Tema: {escape(theme)}", title_style))
+        elements.append(Paragraph(f"<b>Período:</b> {escape(period_label)}", styles["Normal"]))
+        elements.append(
+            Paragraph(
+                f"<b>Total comentarios:</b> {meta.get('total_comments', '—')} &nbsp;|&nbsp; "
+                f"<b>Autores únicos:</b> {summ.get('unique_authors', '—')} &nbsp;|&nbsp; "
+                f"<b>Redes en datos:</b> {summ.get('active_networks', '—')}",
+                styles["Normal"],
+            )
+        )
+        elements.append(
+            Paragraph(
+                f"<b>Alcance de red (filtro):</b> {escape(str(meta.get('networks', '—')))}",
+                styles["Normal"],
+            )
+        )
+        elements.append(Spacer(1, 16))
+
+        dist = data.get("distribution") or {}
+        networks = dist.get("networks") or []
+        if networks:
+            elements.append(Paragraph("Distribución por red", header_style))
+            total_n = meta.get("total_comments") or sum(int(n.get("value") or 0) for n in networks)
+            net_rows = [["Red", "Comentarios", "%"]]
+            for n in networks:
+                v = int(n.get("value") or 0)
+                pct = round((v / total_n) * 100) if total_n else 0
+                net_rows.append([escape(str(n.get("name", ""))), str(v), f"{pct}%"])
+            t_net = Table(net_rows, colWidths=[180, 90, 60])
+            t_net.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+                        ("GRID", (0, 0), (-1, -1), 1, colors.HexColor("#e2e8f0")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ]
+                )
+            )
+            elements.append(t_net)
+            elements.append(Spacer(1, 20))
+
+        details = data.get("details") or data.get("topics") or []
+        elements.append(Paragraph("Subtemas detectados", header_style))
+        if details:
+            for i, block in enumerate(details[:25]):
+                title = block.get("title") or ""
+                elements.append(Paragraph(f"{i + 1}. {escape(title)}", header_style))
+                elements.append(
+                    Paragraph(
+                        f"{block.get('count', 0)} menciones ({block.get('percentage', 0)}%)",
+                        styles["Normal"],
+                    )
+                )
+                desc = (block.get("description") or "").strip()
+                if desc:
+                    safe = escape(desc).replace("\n", "<br/>")
+                    elements.append(Paragraph(safe, styles["Normal"]))
+                elements.append(Spacer(1, 10))
+        else:
+            elements.append(Paragraph("Sin subtemas en este período.", styles["Italic"]))
+
+        elements.append(Spacer(1, 24))
+        elements.append(Paragraph("Generado por UXR Social AI.", styles["Normal"]))
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+
+def _safe_attachment_filename(*parts: str) -> str:
+    raw = "_".join(p for p in parts if p) or "reporte"
+    return re.sub(r"[^\w\-.]+", "_", raw)[:120]
+
 
 # Mail Configuration
 conf = ConnectionConfig(
@@ -1019,17 +1135,15 @@ SUB_PATTERNS = {
 }
 
 
-@app.get("/analytics/theme-report")
-def get_theme_report(
+def _build_theme_report(
     theme: str,
-    network: Optional[str] = None,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-    include_chatbot: bool = Query(False),
-    date_scope: str = Query("comment_date"),
-    session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
-):
+    network: Optional[str],
+    start_date: Optional[str],
+    end_date: Optional[str],
+    include_chatbot: bool,
+    date_scope: str,
+    session: Session,
+) -> dict:
     # 1. Query Comments for the Specific Theme
     statement = select(Comment).join(Dataset).where(Dataset.status == "ready").where(Comment.theme == theme)
     statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
@@ -1040,17 +1154,17 @@ def get_theme_report(
             statement = statement.where(Comment.network.in_(network_list))
     elif _analytics_exclude_chatbot(include_chatbot, network):
         statement = statement.where(Dataset.source_type != "Chatbot")
-        
+
     comments = session.exec(statement).all()
     count = len(comments)
-    
+
     if count == 0:
         return {"error": f"No se encontró información para el tema {theme} en este periodo."}
 
     # 2. Sub-patterns Distribution (Equivalent to top_problems in consolidated)
     patterns = SUB_PATTERNS.get(theme, {})
     norm_texts = [(_normalize_text(c.comment_text), c) for c in comments]
-    
+
     problems = []
     for label, keywords in patterns.items():
         hits = [c for norm, c in norm_texts if any(kw in norm for kw in keywords)]
@@ -1063,7 +1177,7 @@ def get_theme_report(
                 "tags": keywords[:4],
                 "quotes": _get_representative_quotes(hits, keywords)
             })
-    
+
     problems.sort(key=lambda x: x["count"], reverse=True)
 
     # 3. Network Distribution for this theme
@@ -1071,15 +1185,13 @@ def get_theme_report(
     networks_dist = [{"name": n, "value": v} for n, v in net_counts.items()]
 
     # 4. Trends for this theme
-    # We call get_trends but need to filter for theme inside or pass it. 
-    # For now, let's just filter comments here for trends
     daily = {}
     for c in comments:
         d = c.comment_date.strftime("%Y-%m-%d")
         n = c.network
         key = (d, n)
         daily[key] = daily.get(key, 0) + 1
-    
+
     trends = [{"date": k[0], "network": k[1], "count": v} for k, v in daily.items()]
     trends.sort(key=lambda x: x["date"])
 
@@ -1090,7 +1202,7 @@ def get_theme_report(
             d1 = datetime.fromisoformat(start_date).strftime("%d/%m/%Y")
             d2 = datetime.fromisoformat(end_date).strftime("%d/%m/%Y")
             period_label = f"Desde {d1} Hasta {d2}"
-        except:
+        except Exception:
             period_label = f"Desde {start_date} Hasta {end_date}"
 
     return {
@@ -1109,10 +1221,26 @@ def get_theme_report(
         "distribution": {
             "networks": networks_dist
         },
-        "topics": problems, # Reusing 'topics' key for the sub-pattern distribution chart
+        "topics": problems,
         "trends": trends,
-        "details": problems # For the vertical problem cards
+        "details": problems
     }
+
+
+@app.get("/analytics/theme-report")
+def get_theme_report(
+    theme: str,
+    network: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    return _build_theme_report(
+        theme, network, start_date, end_date, include_chatbot, date_scope, session
+    )
 
 
 @app.post("/analytics/theme-summary")
@@ -1334,6 +1462,65 @@ def get_consolidated_report(
         "top_problems": problems,
         "feedback_insights": feedback_signals
     }
+
+
+@app.get("/analytics/consolidated-pdf")
+def download_consolidated_pdf(
+    network: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    report = get_consolidated_report(
+        network=network,
+        start_date=start_date,
+        end_date=end_date,
+        include_chatbot=include_chatbot,
+        date_scope=date_scope,
+        session=session,
+        current_user=current_user,
+    )
+    if not isinstance(report, dict) or report.get("error"):
+        detail = report.get("error", "Sin datos") if isinstance(report, dict) else "Sin datos"
+        raise HTTPException(status_code=400, detail=str(detail))
+    start_str = start_date or "inicio"
+    end_str = end_date or "fin"
+    pdf_bytes = PDFGenerator.generate(report, start_str, end_str)
+    fname = _safe_attachment_filename("uxr_consolidado", start_str, end_str) + ".pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@app.get("/analytics/theme-pdf")
+def download_theme_pdf(
+    theme: str = Query(..., description="Nombre del tema / categoría"),
+    network: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    include_chatbot: bool = Query(False),
+    date_scope: str = Query("comment_date"),
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user
+    data = _build_theme_report(
+        theme, network, start_date, end_date, include_chatbot, date_scope, session
+    )
+    if data.get("error"):
+        raise HTTPException(status_code=400, detail=str(data["error"]))
+    pdf_bytes = PDFGenerator.generate_theme(data, theme, start_date or "", end_date or "")
+    fname = _safe_attachment_filename("uxr_tema", theme[:48], start_date or "", end_date or "") + ".pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @app.post("/analytics/consolidated-summary")

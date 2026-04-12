@@ -11,9 +11,10 @@ import {
   Loader2,
   Trash2,
   Sparkles,
+  Download,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { sendReport, getFullReport, getTopics, api } from "@/lib/api";
+import { sendReport, getFullReport, getTopics, getThemeReport, api } from "@/lib/api";
 
 const stepCircleClass =
   "inline-flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full text-sm font-semibold";
@@ -23,6 +24,39 @@ const cardClass =
   "rounded-xl border border-[var(--color-border-soft)] bg-white p-6 sm:p-8";
 
 type DateScope = "comment_date" | "dataset_upload";
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadTextFile(filename: string, text: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  triggerBlobDownload(blob, filename);
+}
+
+function safeFilePart(s: string, maxLen = 48) {
+  return s.replace(/[^\w\-]+/g, "_").slice(0, maxLen) || "tema";
+}
+
+async function readAxiosBlobErrorMessage(err: unknown): Promise<string> {
+  const ax = err as { response?: { data?: Blob }; message?: string };
+  const data = ax.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const t = await data.text();
+      const j = JSON.parse(t) as { detail?: string };
+      return String(j.detail || t || "Error al descargar");
+    } catch {
+      return "Error al descargar el archivo.";
+    }
+  }
+  return ax.message || "Error al descargar el archivo.";
+}
 
 export default function ReportsPage() {
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
@@ -45,6 +79,8 @@ export default function ReportsPage() {
   const [consolidatedLoading, setConsolidatedLoading] = useState(false);
   const [consolidatedError, setConsolidatedError] = useState<string | null>(null);
   const [consolidatedVisible, setConsolidatedVisible] = useState(false);
+  const [downloadBusyKey, setDownloadBusyKey] = useState<string | null>(null);
+  const [fileDownloadError, setFileDownloadError] = useState<string | null>(null);
 
   const datesComplete = Boolean(dateRange.start && dateRange.end);
 
@@ -52,6 +88,7 @@ export default function ReportsPage() {
     setConsolidatedSummary(null);
     setConsolidatedError(null);
     setConsolidatedVisible(false);
+    setFileDownloadError(null);
   }, [dateRange.start, dateRange.end, dateScope]);
 
   useEffect(() => {
@@ -117,6 +154,111 @@ export default function ReportsPage() {
     } finally {
       setAiLoadingTheme(null);
     }
+  };
+
+  const downloadConsolidatedPdf = async () => {
+    if (!datesComplete) return;
+    setFileDownloadError(null);
+    setDownloadBusyKey("consolidated-pdf");
+    try {
+      const res = await api.get("/analytics/consolidated-pdf", {
+        params: {
+          start_date: dateRange.start,
+          end_date: dateRange.end,
+          include_chatbot: true,
+          date_scope: dateScope,
+        },
+        responseType: "blob",
+      });
+      const blob =
+        res.data instanceof Blob ? res.data : new Blob([res.data as BlobPart]);
+      triggerBlobDownload(
+        blob,
+        `uxr_consolidado_${dateRange.start}_${dateRange.end}.pdf`
+      );
+    } catch (err) {
+      setFileDownloadError(await readAxiosBlobErrorMessage(err));
+    } finally {
+      setDownloadBusyKey(null);
+    }
+  };
+
+  const downloadConsolidatedAiTxt = () => {
+    if (!consolidatedSummary || !datesComplete) return;
+    downloadTextFile(
+      `uxr_consolidado_IA_${dateRange.start}_${dateRange.end}.txt`,
+      consolidatedSummary
+    );
+  };
+
+  const downloadThemePdf = async (topic: string) => {
+    if (!datesComplete) return;
+    setFileDownloadError(null);
+    setDownloadBusyKey(`theme-pdf:${topic}`);
+    try {
+      const res = await api.get("/analytics/theme-pdf", {
+        params: {
+          theme: topic,
+          start_date: dateRange.start,
+          end_date: dateRange.end,
+          include_chatbot: true,
+          date_scope: dateScope,
+        },
+        responseType: "blob",
+      });
+      const blob =
+        res.data instanceof Blob ? res.data : new Blob([res.data as BlobPart]);
+      const part = safeFilePart(topic);
+      triggerBlobDownload(
+        blob,
+        `uxr_tema_${part}_${dateRange.start}_${dateRange.end}.pdf`
+      );
+    } catch (err) {
+      setFileDownloadError(await readAxiosBlobErrorMessage(err));
+    } finally {
+      setDownloadBusyKey(null);
+    }
+  };
+
+  const downloadThemeJson = async (topic: string) => {
+    if (!datesComplete) return;
+    setFileDownloadError(null);
+    setDownloadBusyKey(`theme-json:${topic}`);
+    try {
+      const data = await getThemeReport({
+        theme: topic,
+        start_date: dateRange.start,
+        end_date: dateRange.end,
+        include_chatbot: true,
+        date_scope: dateScope,
+      });
+      if (data && typeof data === "object" && "error" in data) {
+        setFileDownloadError(String((data as { error: string }).error));
+        return;
+      }
+      const part = safeFilePart(topic);
+      downloadTextFile(
+        `uxr_tema_${part}_${dateRange.start}_${dateRange.end}.json`,
+        JSON.stringify(data, null, 2)
+      );
+    } catch (err) {
+      const ax = err as { response?: { data?: { detail?: string } }; message?: string };
+      setFileDownloadError(
+        ax.response?.data?.detail || ax.message || "No se pudo obtener el JSON del tema."
+      );
+    } finally {
+      setDownloadBusyKey(null);
+    }
+  };
+
+  const downloadThemeAiTxt = (topic: string) => {
+    const t = aiSummaryByTheme[topic];
+    if (!t || !datesComplete) return;
+    const part = safeFilePart(topic);
+    downloadTextFile(
+      `uxr_tema_IA_${part}_${dateRange.start}_${dateRange.end}.txt`,
+      t
+    );
   };
 
   const handleConsolidatedClick = async () => {
@@ -325,7 +467,7 @@ export default function ReportsPage() {
                       key={row.topic}
                       className="rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)]/50 p-4"
                     >
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                           <p className="text-sm font-semibold text-[var(--color-text-heading)]">
                             {row.topic}
@@ -334,24 +476,64 @@ export default function ReportsPage() {
                             {row.count} comentarios
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleThemeSummary(row.topic)}
-                          disabled={aiLoadingTheme === row.topic}
-                          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--color-primary-700)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
-                        >
-                          {aiLoadingTheme === row.topic ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Generando…
-                            </>
-                          ) : (
-                            <>
-                              <Sparkles className="h-4 w-4" />
-                              Resumen IA
-                            </>
-                          )}
-                        </button>
+                        <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleThemeSummary(row.topic)}
+                              disabled={aiLoadingTheme === row.topic}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--color-primary-700)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                            >
+                              {aiLoadingTheme === row.topic ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Generando…
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="h-4 w-4" />
+                                  Resumen IA
+                                </>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadThemePdf(row.topic)}
+                              disabled={downloadBusyKey === `theme-pdf:${row.topic}`}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                            >
+                              {downloadBusyKey === `theme-pdf:${row.topic}` ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Download className="h-4 w-4" />
+                              )}
+                              PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadThemeJson(row.topic)}
+                              disabled={downloadBusyKey === `theme-json:${row.topic}`}
+                              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                            >
+                              {downloadBusyKey === `theme-json:${row.topic}` ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Download className="h-4 w-4" />
+                              )}
+                              JSON
+                            </button>
+                          </div>
+                          {aiSummaryByTheme[row.topic] ? (
+                            <button
+                              type="button"
+                              onClick={() => downloadThemeAiTxt(row.topic)}
+                              className="inline-flex items-center justify-center gap-2 self-start rounded-lg border border-dashed border-[var(--color-border-soft)] bg-[var(--color-bg-page)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-primary-600)] hover:text-[var(--color-primary-700)]"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                              Descargar resumen IA (.txt)
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                       {aiErrorByTheme[row.topic] ? (
                         <p className="mt-3 text-sm font-medium text-red-600">
@@ -376,25 +558,53 @@ export default function ReportsPage() {
               <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
                 Resumen consolidado
               </h3>
-              <button
-                type="button"
-                onClick={handleConsolidatedClick}
-                disabled={consolidatedLoading}
-                className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
-              >
-                {consolidatedLoading ? (
-                  <>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <button
+                  type="button"
+                  onClick={handleConsolidatedClick}
+                  disabled={consolidatedLoading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                >
+                  {consolidatedLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generando resumen con IA…
+                    </>
+                  ) : consolidatedSummary && consolidatedVisible ? (
+                    "Ocultar resumen consolidado"
+                  ) : (
+                    "Ver resumen consolidado"
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadConsolidatedPdf}
+                  disabled={!datesComplete || downloadBusyKey === "consolidated-pdf"}
+                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                >
+                  {downloadBusyKey === "consolidated-pdf" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Generando resumen con IA…
-                  </>
-                ) : consolidatedSummary && consolidatedVisible ? (
-                  "Ocultar resumen consolidado"
-                ) : (
-                  "Ver resumen consolidado"
-                )}
-              </button>
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  Descargar PDF (datos)
+                </button>
+                {consolidatedSummary ? (
+                  <button
+                    type="button"
+                    onClick={downloadConsolidatedAiTxt}
+                    className="inline-flex items-center gap-2 rounded-lg border border-dashed border-[var(--color-border-soft)] bg-[var(--color-bg-page)] px-4 py-2.5 text-sm font-semibold text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-primary-600)] hover:text-[var(--color-primary-700)]"
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar texto IA (.txt)
+                  </button>
+                ) : null}
+              </div>
               {consolidatedError ? (
                 <p className="mt-3 text-sm font-medium text-red-600">{consolidatedError}</p>
+              ) : null}
+              {fileDownloadError ? (
+                <p className="mt-3 text-sm font-medium text-red-600">{fileDownloadError}</p>
               ) : null}
               {consolidatedSummary && consolidatedVisible ? (
                 <div
