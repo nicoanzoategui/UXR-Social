@@ -13,3 +13,5 @@ __pycache__/
 backend/.env
 backend/uploads/
 backend/social_analytics.db
+backend/social_analytics.db-wal
+backend/social_analytics.db-shm
