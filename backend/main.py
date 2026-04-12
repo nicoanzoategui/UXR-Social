@@ -17,7 +17,6 @@ from pydantic import BaseModel
 from sqlmodel import Session, select, SQLModel
 from sqlalchemy.orm import selectinload
 from sqlalchemy import or_, and_, func
-from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -35,9 +34,6 @@ from database import engine, create_db_and_tables, get_session
 from models import Dataset, Comment, ImportLog, User, ShareToken
 from processing import clean_sprout_csv, process_chatbot_csv
 from auth import verify_password, get_password_hash, create_access_token, decode_token, ACCESS_TOKEN_EXPIRE_MINUTES
-
-# Load environment variables
-load_dotenv()
 
 # Google acepta GEMINI_API_KEY (AI Studio) o GOOGLE_API_KEY (nombres nuevos del SDK / documentación).
 GEMINI_API_KEY_VALUE = (
@@ -477,6 +473,8 @@ def on_startup():
             print("WARNING: Set ANALYST_USERNAME and ANALYST_PASSWORD (or SEED_SHARED_PASSWORD) for the analyst user.", file=sys.stderr)
 
         session.commit()
+
+    print(f"[uploads] Archivos CSV crudos: {UPLOAD_DIR}", file=sys.stderr)
 
 async def get_current_user(request: Request, session: Session = Depends(get_session)):
     token = None
