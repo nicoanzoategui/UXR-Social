@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+from pathlib import Path
 import random
 import re
 import unicodedata
@@ -395,8 +396,36 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
-UPLOAD_DIR = "uploads"
+# Misma idea que database.py: rutas relativas al cwd rompen al reiniciar uvicorn desde otro directorio.
+_BACKEND_ROOT = Path(__file__).resolve().parent
+UPLOAD_DIR = str((_BACKEND_ROOT / "uploads").resolve())
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def _recent_identical_upload(
+    session: Session,
+    *,
+    file_name: str,
+    social_network: str,
+    account_name: str,
+    source_type: Optional[str] = None,
+    within_seconds: int = 120,
+) -> Optional[Dataset]:
+    """
+    Evita doble POST accidental del mismo archivo; permite el mismo nombre de archivo
+    (muy habitual en exportaciones de Sprout) en importaciones posteriores.
+    """
+    since = datetime.utcnow() - timedelta(seconds=within_seconds)
+    stmt = (
+        select(Dataset)
+        .where(Dataset.file_name == file_name)
+        .where(Dataset.social_network == social_network)
+        .where(Dataset.account_name == account_name)
+        .where(Dataset.uploaded_at >= since)
+    )
+    if source_type is not None:
+        stmt = stmt.where(Dataset.source_type == source_type)
+    return session.exec(stmt).first()
 
 def _upsert_seed_user(
     session: Session,
@@ -648,18 +677,18 @@ async def upload_csv(
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can upload")
 
-    dup = session.exec(
-        select(Dataset).where(
-            Dataset.file_name == file.filename,
-            Dataset.social_network == network,
-            Dataset.account_name == account_name,
-            Dataset.status == "ready",
-        )
-    ).first()
+    acc = (account_name or "").strip() or network
+    dup = _recent_identical_upload(
+        session,
+        file_name=file.filename,
+        social_network=network,
+        account_name=acc,
+        source_type="Sprout Social",
+    )
     if dup:
         raise HTTPException(
             status_code=409,
-            detail="Ya existe un dataset con ese archivo y cuenta. Si querés reimportar, eliminá el dataset anterior primero.",
+            detail="Se detectó el mismo archivo dos veces en muy poco tiempo. Si ya se importó, refrescá el historial.",
         )
 
     # Save raw file
@@ -671,11 +700,12 @@ async def upload_csv(
     dataset = Dataset(
         file_name=file.filename,
         social_network=network,
-        account_name=account_name,
+        account_name=acc,
         date_from=datetime.fromisoformat(date_from) if date_from else None,
         date_to=datetime.fromisoformat(date_to) if date_to else None,
         raw_file_path=file_path,
-        status="processing"
+        status="processing",
+        uploaded_by=current_user.id,
     )
     session.add(dataset)
     session.commit()
@@ -721,13 +751,18 @@ async def upload_chatbot_csv(
     if not account_clean:
         raise HTTPException(status_code=400, detail="Nombre de cuenta requerido")
 
-    dup_chat = session.exec(
-        select(Dataset).where(Dataset.file_name == file.filename, Dataset.status == "ready")
-    ).first()
+    sn = social_network or "Chatbot"
+    dup_chat = _recent_identical_upload(
+        session,
+        file_name=file.filename,
+        social_network=sn,
+        account_name=account_clean,
+        source_type="Chatbot",
+    )
     if dup_chat:
         raise HTTPException(
             status_code=409,
-            detail="Ya existe un dataset con ese archivo. Si querés reimportar, eliminá el dataset anterior primero.",
+            detail="Se detectó el mismo archivo de chatbot dos veces en muy poco tiempo. Esperá un momento o revisá el historial.",
         )
 
     # Save raw file
@@ -739,10 +774,11 @@ async def upload_chatbot_csv(
     dataset = Dataset(
         file_name=file.filename,
         source_type="Chatbot",
-        social_network=social_network or "Chatbot",
+        social_network=sn,
         account_name=account_clean,
         raw_file_path=file_path,
-        status="processing"
+        status="processing",
+        uploaded_by=current_user.id,
     )
     session.add(dataset)
     session.commit()
@@ -776,7 +812,8 @@ async def upload_chatbot_csv(
 
 @app.get("/datasets", response_model=List[Dataset])
 def get_datasets(session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):
-    return session.exec(select(Dataset)).all()
+    stmt = select(Dataset).order_by(Dataset.uploaded_at.desc())
+    return session.exec(stmt).all()
 
 @app.delete("/datasets/{dataset_id}")
 def delete_dataset(dataset_id: int, session: Session = Depends(get_session), current_user: User = Depends(get_current_user)):

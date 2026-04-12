@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import {
   UploadCloud,
   CheckCircle2,
@@ -25,8 +26,11 @@ interface CSVRow {
 }
 
 export default function AdminDashboard() {
+  const pathname = usePathname();
   const [file, setFile] = useState<File | null>(null);
   const [network, setNetwork] = useState("Instagram");
+  /** Distingue importaciones con el mismo nombre de archivo (muy común en exportaciones de Sprout). */
+  const [sproutImportLabel, setSproutImportLabel] = useState("");
   const [uploading, setUploading] = useState(false);
   const [datasets, setDatasets] = useState<any[]>([]);
   const [status, setStatus] = useState<{ type: 'success' | 'error', msg: string } | null>(null);
@@ -50,19 +54,20 @@ export default function AdminDashboard() {
     "Message"
   ];
 
-  async function fetchDatasets() {
+  const fetchDatasets = useCallback(async () => {
     try {
       const data = await getDatasets();
-      console.log("Fetched datasets:", data);
-      setDatasets(data);
+      setDatasets(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Error fetching datasets:", error);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    fetchDatasets();
-  }, []);
+    if (pathname === "/upload") {
+      void fetchDatasets();
+    }
+  }, [pathname, fetchDatasets]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0] || null;
@@ -101,7 +106,7 @@ export default function AdminDashboard() {
     try {
       await deleteDataset(id);
       setStatus({ type: 'success', msg: "Dataset eliminado correctamente." });
-      fetchDatasets();
+      void fetchDatasets();
     } catch (error) {
       setStatus({ type: 'error', msg: "Error al eliminar el dataset." });
     }
@@ -150,13 +155,20 @@ export default function AdminDashboard() {
     const formData = new FormData();
     formData.append("file", filteredFile);
     formData.append("network", network);
-    formData.append("account_name", network);
+    const accountLabel =
+      sproutImportLabel.trim() ||
+      `${network} · importación ${new Date().toLocaleString("es-AR", {
+        dateStyle: "short",
+        timeStyle: "medium",
+      })}`;
+    formData.append("account_name", accountLabel);
 
     try {
       await uploadCSV(formData);
       setStatus({ type: 'success', msg: "Sincronización completada con éxito." });
       setFile(null);
-      fetchDatasets();
+      setSproutImportLabel("");
+      void fetchDatasets();
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || "Fallo en la sincronización. Verifica el formato.";
       setStatus({ type: 'error', msg: errorMsg });
@@ -190,7 +202,7 @@ export default function AdminDashboard() {
       setChatbotFile(null);
       setChatbotAccountName("");
       if (chatbotFileInputRef.current) chatbotFileInputRef.current.value = "";
-      fetchDatasets();
+      void fetchDatasets();
     } catch (error: any) {
       const errorMsg =
         error.response?.data?.detail || "Fallo en la importación del chatbot. Verifica el formato.";
@@ -234,6 +246,23 @@ export default function AdminDashboard() {
                 <option>LinkedIn</option>
                 <option>X</option>
               </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">
+                Etiqueta de esta importación (opcional)
+              </label>
+              <input
+                type="text"
+                value={sproutImportLabel}
+                onChange={(e) => setSproutImportLabel(e.target.value)}
+                placeholder="Ej. UCES Instagram — febrero 2025"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none focus:border-slate-500 transition-all placeholder:font-normal placeholder:text-slate-400"
+              />
+              <p className="text-[11px] text-slate-400 font-medium pl-1 leading-relaxed">
+                Sprout suele exportar siempre el mismo nombre de archivo. Si lo dejás vacío, generamos una etiqueta con
+                fecha y hora para que cada subida quede registrada por separado.
+              </p>
             </div>
 
             <div className="space-y-2">
