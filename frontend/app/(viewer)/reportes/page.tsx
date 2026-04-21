@@ -15,13 +15,19 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { sendReport, getFullReport, getTopics, api } from "@/lib/api";
+import {
+  viewerBtnPrimary,
+  viewerBtnSecondary,
+  viewerCard,
+  viewerInput,
+  viewerMuted,
+} from "@/lib/viewer-ui";
 
 const stepCircleClass =
   "inline-flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full text-sm font-semibold";
-const stepCircleStyle = { background: "#f1f1ef", color: "#37352f" };
+const stepCircleStyle = { background: "#dbeafe", color: "#1e40af" };
 
-const cardClass =
-  "rounded-xl border border-[var(--color-border-soft)] bg-white p-6 sm:p-8";
+const cardClass = `${viewerCard} p-6 sm:p-8 hover:shadow-md`;
 
 type DateScope = "comment_date" | "dataset_upload";
 
@@ -309,12 +315,12 @@ export default function ReportsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8 pb-12">
       <header className="flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-800)]">
-          <FileText className="h-6 w-6 text-white" />
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md">
+          <FileText className="h-6 w-6" />
         </div>
         <div>
-          <h1 className="heading-xl text-[var(--color-text-heading)]">Central de reportes</h1>
-          <p className="body-md mt-1 text-[var(--color-text-muted)]">
+          <h1 className="heading-xl text-slate-900">Central de reportes</h1>
+          <p className={`body-md mt-1 ${viewerMuted}`}>
             Configurá el período, revisá resultados y enviá el PDF por correo.
           </p>
         </div>
@@ -332,21 +338,21 @@ export default function ReportsPage() {
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-[var(--color-text-muted)]">Desde</label>
+            <label className="text-xs font-semibold text-slate-600">Desde</label>
             <input
               type="date"
               value={dateRange.start}
               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-              className="w-full rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)] px-3 py-2.5 text-sm text-[var(--color-text-body)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-600)]/30"
+              className={`w-full py-2.5 ${viewerInput}`}
             />
           </div>
           <div className="space-y-2">
-            <label className="text-xs font-semibold text-[var(--color-text-muted)]">Hasta</label>
+            <label className="text-xs font-semibold text-slate-600">Hasta</label>
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-              className="w-full rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)] px-3 py-2.5 text-sm text-[var(--color-text-body)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-600)]/30"
+              className={`w-full py-2.5 ${viewerInput}`}
             />
           </div>
         </div>
@@ -411,7 +417,7 @@ export default function ReportsPage() {
                   {topics.map((row) => (
                     <li
                       key={row.topic}
-                      className="rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)]/50 p-4"
+                      className="rounded-lg border border-slate-200/90 bg-white/80 p-4 shadow-sm transition-all duration-300 hover:shadow-md"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
@@ -427,7 +433,7 @@ export default function ReportsPage() {
                             type="button"
                             onClick={() => handleThemeSummary(row.topic)}
                             disabled={aiLoadingTheme === row.topic}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--color-primary-700)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                            className={`${viewerBtnSecondary} text-blue-700 border-blue-200 hover:text-blue-900`}
                           >
                             {aiLoadingTheme === row.topic ? (
                               <>
@@ -451,8 +457,8 @@ export default function ReportsPage() {
                       {aiSummaryByTheme[row.topic] ? (
                         <div className="mt-3 space-y-3">
                           <div
-                            className="whitespace-pre-wrap rounded-md border border-[var(--color-border-soft)] bg-[#f7f7f5] p-4 text-sm leading-relaxed text-[var(--color-text-body)]"
-                            style={{ borderLeftWidth: 3, borderLeftColor: "#2383e2" }}
+                            className="whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800"
+                            style={{ borderLeftWidth: 3, borderLeftColor: "#2563eb" }}
                           >
                             {aiSummaryByTheme[row.topic]}
                           </div>
@@ -460,7 +466,7 @@ export default function ReportsPage() {
                             type="button"
                             onClick={() => downloadThemePdf(row.topic)}
                             disabled={downloadBusyKey === `theme-pdf:${row.topic}`}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-3 py-2 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                            className={`${viewerBtnSecondary} disabled:opacity-60`}
                           >
                             {downloadBusyKey === `theme-pdf:${row.topic}` ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
@@ -477,8 +483,8 @@ export default function ReportsPage() {
               )}
             </div>
 
-            <div className="border-t border-[var(--color-border-soft)] pt-8">
-              <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+            <div className="border-t border-slate-200/80 pt-8">
+              <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-600">
                 Resumen consolidado
               </h3>
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
@@ -486,7 +492,7 @@ export default function ReportsPage() {
                   type="button"
                   onClick={handleConsolidatedClick}
                   disabled={consolidatedLoading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                  className={`${viewerBtnSecondary} px-4 py-2.5 disabled:opacity-60`}
                 >
                   {consolidatedLoading ? (
                     <>
@@ -504,7 +510,7 @@ export default function ReportsPage() {
                     type="button"
                     onClick={downloadConsolidatedPdf}
                     disabled={!datesComplete || downloadBusyKey === "consolidated-pdf"}
-                    className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--color-text-heading)] transition-colors hover:bg-[var(--color-bg-soft)] disabled:opacity-60"
+                    className={`${viewerBtnSecondary} px-4 py-2.5 disabled:opacity-60`}
                   >
                     {downloadBusyKey === "consolidated-pdf" ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -523,8 +529,8 @@ export default function ReportsPage() {
               ) : null}
               {consolidatedSummary && consolidatedVisible ? (
                 <div
-                  className="mt-4 max-h-[min(520px,60vh)] overflow-y-auto whitespace-pre-wrap rounded-md border border-[var(--color-border-soft)] bg-[#f7f7f5] p-4 text-sm leading-relaxed text-[var(--color-text-body)]"
-                  style={{ borderLeftWidth: 3, borderLeftColor: "#2383e2" }}
+                  className="mt-4 max-h-[min(520px,60vh)] overflow-y-auto whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800"
+                  style={{ borderLeftWidth: 3, borderLeftColor: "#2563eb" }}
                 >
                   {consolidatedSummary}
                 </div>
@@ -553,13 +559,13 @@ export default function ReportsPage() {
                 value={currentEmail}
                 onChange={(e) => setCurrentEmail(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addEmail())}
-                className="w-full rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-page)] py-2.5 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-600)]/30"
+                className={`w-full py-2.5 pl-10 pr-3 ${viewerInput}`}
               />
             </div>
             <button
               type="button"
               onClick={addEmail}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-primary-900)] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-black sm:w-auto"
+              className={`${viewerBtnPrimary} sm:w-auto min-h-0 py-2.5`}
             >
               <Plus className="h-4 w-4" />
               Agregar

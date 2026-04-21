@@ -13,6 +13,7 @@ import {
 import { motion } from "framer-motion";
 import { getSummary, getTrends, getTopics } from "@/lib/api";
 import TrendsChart from "@/components/TrendsChart";
+import { viewerCardGradient } from "@/lib/viewer-ui";
 
 const REDES = "Instagram,Facebook,LinkedIn,X,google_maps";
 const ALL = `${REDES},Chatbot`;
@@ -163,13 +164,7 @@ export default function DashboardPage() {
         </p>
       </header>
 
-      <div
-        className="rounded-xl border border-slate-200/80 p-5 md:p-6 space-y-4 shadow-sm bg-[#f9fafb]"
-        style={{
-          backgroundImage:
-            "linear-gradient(180deg, #f9fafb 0%, rgba(37, 99, 235, 0.04) 100%)",
-        }}
-      >
+        <div className={`${viewerCardGradient} space-y-4`}>
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mr-2">
             Periodo
@@ -285,7 +280,7 @@ export default function DashboardPage() {
         })}
       </div>
 
-      <div className="rounded-xl border border-slate-200/80 p-6 md:p-8 shadow-sm bg-[#f9fafb] transition-all duration-300 hover:shadow-md">
+      <div className="card card-pad-lg card-interactive">
         <h2 className="heading-md text-lg mb-6 text-slate-900">Top 5 temas</h2>
         <div className="space-y-4">
           {topThemes.length === 0 ? (
@@ -320,11 +315,7 @@ export default function DashboardPage() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-xl border border-slate-200/80 p-6 md:p-8 shadow-sm bg-[#f9fafb] min-h-[400px] transition-all duration-300 hover:shadow-md"
-        style={{
-          backgroundImage:
-            "linear-gradient(165deg, #f9fafb 0%, rgba(37, 99, 235, 0.05) 55%, #f9fafb 100%)",
-        }}
+        className={`${viewerCardGradient} min-h-[400px] hover:shadow-md`}
       >
         <div className="mb-6">
           <h2 className="heading-md text-lg flex items-center gap-2 text-slate-900">

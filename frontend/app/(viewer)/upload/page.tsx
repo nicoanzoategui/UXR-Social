@@ -221,7 +221,7 @@ export default function AdminDashboard() {
 
       {/* Main Grid: Upload Center */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="card card-pad-lg shadow-md border-[var(--color-border-medium)] h-full">
+        <div className="card card-pad-lg h-full card-interactive">
           <div className="flex items-center gap-4 mb-8">
             <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-slate-500/20">
               <UploadCloud className="w-6 h-6" />
@@ -285,7 +285,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="card card-pad-lg shadow-md border-[var(--color-border-medium)] h-full">
+        <div className="card card-pad-lg h-full card-interactive">
           <div className="flex items-center gap-4 mb-8">
             <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-slate-500/20">
               <MessageSquare className="w-6 h-6" />
@@ -340,7 +340,7 @@ export default function AdminDashboard() {
 
             <button
               type="submit"
-              className="w-full py-4 rounded-xl bg-slate-900 hover:bg-black text-white font-black text-sm uppercase tracking-wider shadow-lg shadow-slate-500/20 transition-colors"
+              className="btn btn-primary w-full py-4 rounded-xl font-black text-sm uppercase tracking-wider min-h-0"
             >
               Importar
             </button>
@@ -372,7 +372,7 @@ export default function AdminDashboard() {
           <History className="w-6 h-6 text-slate-800" />
           Historial de Sincronización
         </h2>
-        <div className="card overflow-hidden shadow-sm">
+        <div className="card overflow-hidden card-interactive">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">
@@ -564,7 +564,7 @@ export default function AdminDashboard() {
                   </p>
                   <button
                     onClick={confirmAndSync}
-                    className="btn bg-slate-900 hover:bg-black text-white shadow-2xl shadow-slate-500/40 px-12 gap-3 font-black text-sm uppercase tracking-wider h-14"
+                    className="btn btn-primary px-12 gap-3 font-black text-sm uppercase tracking-wider h-14 min-h-0 shadow-xl"
                   >
                     <Save className="w-5 h-5" />
                     Finalizar Sincronización

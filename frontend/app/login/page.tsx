@@ -86,10 +86,10 @@ export default function LoginPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full card p-12 rounded-[2.5rem] shadow-2xl relative z-10 bg-white/80 backdrop-blur-xl border-[var(--color-border-medium)]"
+        className="max-w-md w-full p-12 rounded-[2.5rem] shadow-2xl relative z-10 bg-[#f9fafb]/95 backdrop-blur-xl border border-slate-200/90"
       >
         <div className="text-center mb-10">
-          <div className="w-20 h-20 bg-[var(--color-primary-800)] rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-indigo-500/20 rotate-3 group hover:rotate-0 transition-transform duration-300">
+          <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/25 rotate-3 group hover:rotate-0 transition-transform duration-300">
             <Activity className="w-10 h-10 text-white" />
           </div>
           <h1 className="logo text-4xl mb-2 text-slate-900">UX</h1>
@@ -125,7 +125,7 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="usuario"
                 autoComplete="username"
-                className="w-full bg-slate-50/50 border border-slate-200 rounded-xl pl-11 pr-4 py-4 text-[var(--color-text-body)] font-semibold focus:outline-none focus:border-[var(--color-primary-600)] transition-all shadow-sm"
+                className="w-full bg-white border border-slate-200 rounded-xl pl-11 pr-4 py-4 text-[var(--color-text-body)] font-semibold focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
                 required
               />
             </div>
@@ -143,7 +143,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 autoComplete="current-password"
-                className="w-full bg-slate-50/50 border border-slate-200 rounded-xl pl-11 pr-4 py-4 text-[var(--color-text-body)] font-semibold focus:outline-none focus:border-[var(--color-primary-600)] transition-all shadow-sm"
+                className="w-full bg-white border border-slate-200 rounded-xl pl-11 pr-4 py-4 text-[var(--color-text-body)] font-semibold focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all shadow-sm"
                 required
               />
             </div>
@@ -152,7 +152,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="btn btn-primary w-full py-5 rounded-2xl shadow-xl shadow-indigo-500/20 flex items-center justify-center gap-3 group mt-8"
+            className="btn btn-primary w-full py-5 rounded-2xl flex items-center justify-center gap-3 group mt-8"
           >
             {loading ? (
               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

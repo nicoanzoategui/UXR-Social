@@ -4,17 +4,24 @@
   /* =========================
      COLORS
   ========================= */
-  --color-bg-page: #f7f7f5;
+  /* Fondo general (slate suave, alineado con sidebar) */
+  --color-bg-page: #f1f5f9;
   --color-bg-surface: #ffffff;
-  --color-bg-soft: #f1f1ef;
+  --color-bg-soft: #f1f5f9;
   --color-bg-white: #ffffff;
+
+  /* Primario vibrante (CTAs, activos) — mismo criterio que dashboard */
+  --color-primary-vibrant: #2563eb;
+  --color-primary-vibrant-hover: #1d4ed8;
+  /* Tarjetas panel viewer */
+  --ui-card-bg: #f9fafb;
 
   --color-primary-900: #191919;
   --color-primary-800: #37352f;
   --color-primary-700: #55534a;
   --color-primary-600: #6b6963;
 
-  --color-accent-500: #2383e2;
+  --color-accent-500: #2563eb;
   --color-accent-400: #5ba4e5;
   --color-accent-300: #9dc4ef;
 
@@ -312,12 +319,14 @@ ol {
 }
 
 .btn-primary {
-  background: #2383e2;
+  background: var(--color-primary-vibrant);
   color: #ffffff;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
 }
 
 .btn-primary:hover {
-  background: #1a6bc4;
+  background: var(--color-primary-vibrant-hover);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
 }
 
 .btn-secondary {
@@ -368,10 +377,16 @@ ol {
    SURFACES / CARDS
 ========================= */
 .card {
-  background: var(--color-bg-surface);
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-md);
-  box-shadow: none;
+  background: var(--ui-card-bg);
+  border: 1px solid rgb(226 232 240 / 0.9);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.3s ease, border-color 0.3s ease, transform 0.3s ease;
+}
+
+.card-interactive:hover {
+  box-shadow: var(--shadow-md);
+  border-color: rgb(203 213 225 / 0.95);
 }
 
 .card-pad {

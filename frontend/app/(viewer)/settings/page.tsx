@@ -92,13 +92,13 @@ export default function UsersPage() {
     <div className="space-y-12 pb-20">
       <header>
         <h1 className="heading-xl">Usuarios</h1>
-        <p className="body-md mt-2 text-[var(--color-text-muted)]">
+        <p className="body-md mt-2 text-slate-600">
           Alta de cuentas y permisos (admin / viewer). Solo administradores.
         </p>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="card card-pad-lg shadow-md border-[var(--color-border-medium)] h-full lg:col-span-2">
+        <div className="card card-pad-lg h-full lg:col-span-2 card-interactive">
           <AnimatePresence>
             {status && (
               <motion.div
@@ -122,7 +122,7 @@ export default function UsersPage() {
           </AnimatePresence>
 
           <div className="flex items-center gap-4 mb-8">
-            <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-slate-500/20">
+            <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-md shadow-blue-500/25">
               <UserPlus className="w-6 h-6" />
             </div>
             <div>
@@ -143,7 +143,7 @@ export default function UsersPage() {
                 onChange={(e) => setNewUsername(e.target.value)}
                 placeholder="nombre_usuario"
                 autoComplete="username"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none focus:border-slate-500 transition-all"
+                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -158,7 +158,7 @@ export default function UsersPage() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="••••••••"
                 autoComplete="new-password"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none focus:border-slate-500 transition-all"
+                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
               />
             </div>
 
@@ -169,7 +169,7 @@ export default function UsersPage() {
               <select
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value as "admin" | "viewer")}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none focus:border-slate-500 transition-all appearance-none cursor-pointer"
+                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 appearance-none cursor-pointer"
                 style={{
                   backgroundImage:
                     'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%23677489\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',
@@ -186,7 +186,7 @@ export default function UsersPage() {
             <button
               type="submit"
               disabled={creating}
-              className="btn bg-slate-900 hover:bg-black text-white shadow-xl shadow-slate-500/20 px-8 py-4 rounded-xl font-bold text-sm uppercase tracking-wider disabled:opacity-50"
+              className="btn btn-primary px-8 py-4 rounded-xl font-bold text-sm uppercase tracking-wider disabled:opacity-50 min-h-0"
             >
               {creating ? "Creando…" : "Crear usuario"}
             </button>
@@ -199,7 +199,7 @@ export default function UsersPage() {
           <UsersIcon className="w-6 h-6 text-slate-800" />
           Usuarios registrados
         </h2>
-        <div className="card overflow-hidden shadow-sm">
+        <div className="card overflow-hidden card-interactive">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-100">

@@ -11,6 +11,13 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCommentsPaged } from "@/lib/api";
+import {
+  viewerBtnSecondary,
+  viewerInput,
+  viewerMuted,
+  viewerTabActive,
+  viewerTabInactive,
+} from "@/lib/viewer-ui";
 
 const PAGE_SIZE = 50;
 const REDES_NETWORKS = "Instagram,Facebook,LinkedIn,X,google_maps";
@@ -188,12 +195,12 @@ export default function ConversacionesPage() {
     <div className="space-y-8 pb-12 relative">
       <header>
         <h1 className="heading-xl">Conversaciones</h1>
-        <p className="body-md mt-2 text-[var(--color-text-muted)]">
+        <p className={`body-md mt-2 ${viewerMuted}`}>
           Mensajes de redes sociales y chatbot en un solo lugar.
         </p>
       </header>
 
-      <div className="flex flex-wrap gap-2 border-b border-[var(--color-border-soft)] pb-4">
+      <div className="flex flex-wrap gap-2 border-b border-slate-200/80 pb-4">
         {(
           [
             { id: "todos" as TabId, label: "Todos" },
@@ -205,10 +212,8 @@ export default function ConversacionesPage() {
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors border ${
-              tab === t.id
-                ? "bg-[var(--color-primary-800)] text-white border-[var(--color-primary-800)]"
-                : "bg-white text-[var(--color-text-muted)] border-[var(--color-border-soft)] hover:bg-[var(--color-bg-soft)]"
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 border ${
+              tab === t.id ? viewerTabActive : viewerTabInactive
             }`}
           >
             {t.label}
@@ -216,46 +221,46 @@ export default function ConversacionesPage() {
         ))}
       </div>
 
-      <div className="card card-pad-lg border border-[var(--color-border-soft)] space-y-6">
+      <div className="card card-pad-lg space-y-6 card-interactive">
         <div className="flex flex-col lg:flex-row gap-4 lg:items-end">
           <div className="flex flex-wrap items-center gap-3 flex-1">
-            <Calendar className="w-4 h-4 text-[var(--color-text-muted)] shrink-0" />
+            <Calendar className="w-4 h-4 text-slate-500 shrink-0" />
             <input
               type="date"
               value={dateRange.start}
               onChange={(e) =>
                 setDateRange((p) => ({ ...p, start: e.target.value }))
               }
-              className="bg-[var(--color-bg-soft)] border border-[var(--color-border-soft)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-body)]"
+              className={viewerInput}
             />
-            <span className="text-[var(--color-text-muted)]">→</span>
+            <span className="text-slate-400">→</span>
             <input
               type="date"
               value={dateRange.end}
               onChange={(e) =>
                 setDateRange((p) => ({ ...p, end: e.target.value }))
               }
-              className="bg-[var(--color-bg-soft)] border border-[var(--color-border-soft)] rounded-lg px-3 py-2 text-sm text-[var(--color-text-body)]"
+              className={viewerInput}
             />
           </div>
         </div>
 
         {(tab === "todos" || tab === "redes") && (
           <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-widest">
+            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
               Red social
             </span>
-            <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-[var(--color-bg-soft)] w-fit">
+            <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-slate-100/90 border border-slate-200/80 w-fit">
               {networkOptions.map((net) => (
                 <button
                   key={net.id || "all"}
                   type="button"
                   onClick={() => toggleNetwork(net.id)}
-                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all ${
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all duration-300 ${
                     (net.id === "" && selectedNetworks.length === 0) ||
                     (net.id !== "" && selectedNetworks.includes(net.id))
-                      ? "bg-white text-[var(--color-text-heading)] border border-[var(--color-border-soft)] shadow-sm"
-                      : "text-[var(--color-text-muted)] hover:text-[var(--color-text-body)]"
+                      ? "bg-white text-slate-900 border border-slate-200 shadow-sm ring-1 ring-blue-200/60"
+                      : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
                   {net.label}
@@ -267,14 +272,14 @@ export default function ConversacionesPage() {
 
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+            <Search className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Buscar en texto o autor…"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && applySearch()}
-              className="w-full bg-[var(--color-bg-soft)] border border-[var(--color-border-soft)] rounded-xl pl-11 pr-4 py-3 text-sm text-[var(--color-text-body)] focus:outline-none focus:border-[var(--color-border-medium)]"
+              className={`w-full rounded-xl pl-11 pr-4 py-3 ${viewerInput}`}
             />
           </div>
           <button
@@ -287,7 +292,7 @@ export default function ConversacionesPage() {
         </div>
       </div>
 
-      <div className="card border border-[var(--color-border-soft)] overflow-hidden">
+      <div className="card overflow-hidden card-interactive">
         {loading ? (
           <div className="flex items-center justify-center py-20 gap-3 text-[var(--color-text-muted)]">
             <Loader2 className="w-6 h-6 animate-spin" />
@@ -298,13 +303,13 @@ export default function ConversacionesPage() {
             No hay mensajes con estos filtros.
           </p>
         ) : (
-          <ul className="divide-y divide-[var(--color-border-soft)]">
+          <ul className="divide-y divide-slate-200/90">
             {items.map((c) => (
               <li key={String(c.id)}>
                 <button
                   type="button"
                   onClick={() => openThread(c)}
-                  className="w-full text-left p-5 hover:bg-[var(--color-bg-soft)]/60 transition-colors flex flex-col gap-2"
+                  className="w-full text-left p-5 hover:bg-blue-50/40 transition-all duration-200 flex flex-col gap-2"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <OriginBadge network={String(c.network || "")} />
@@ -327,8 +332,8 @@ export default function ConversacionesPage() {
           </ul>
         )}
 
-        <div className="flex items-center justify-between px-5 py-4 border-t border-[var(--color-border-soft)] bg-[var(--color-bg-page)]">
-          <span className="text-xs text-[var(--color-text-muted)]">
+        <div className="flex items-center justify-between px-5 py-4 border-t border-slate-200/80 bg-slate-50/90">
+          <span className="text-xs text-slate-600">
             {total === 0
               ? "0 mensajes"
               : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} de ${total}`}
@@ -338,7 +343,7 @@ export default function ConversacionesPage() {
               type="button"
               disabled={page <= 0 || loading}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
-              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--color-border-soft)] text-sm font-semibold text-[var(--color-text-body)] disabled:opacity-40 hover:bg-[var(--color-bg-soft)]"
+              className={`${viewerBtnSecondary} gap-1 px-3 py-2 disabled:opacity-40`}
             >
               <ChevronLeft className="w-4 h-4" /> Anterior
             </button>
@@ -346,7 +351,7 @@ export default function ConversacionesPage() {
               type="button"
               disabled={page >= maxPage || loading}
               onClick={() => setPage((p) => p + 1)}
-              className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-[var(--color-border-soft)] text-sm font-semibold text-[var(--color-text-body)] disabled:opacity-40 hover:bg-[var(--color-bg-soft)]"
+              className={`${viewerBtnSecondary} gap-1 px-3 py-2 disabled:opacity-40`}
             >
               Siguiente <ChevronRight className="w-4 h-4" />
             </button>
@@ -363,16 +368,16 @@ export default function ConversacionesPage() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={closePanel}
-              className="fixed inset-0 bg-[var(--color-primary-900)]/20 z-[80] cursor-pointer"
+              className="fixed inset-0 bg-slate-900/25 z-[80] cursor-pointer backdrop-blur-[1px]"
             />
             <motion.aside
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 28, stiffness: 320 }}
-              className="fixed top-0 right-0 h-full w-full max-w-md bg-[var(--color-bg-surface)] border-l border-[var(--color-border-soft)] z-[90] flex flex-col shadow-none"
+              className="fixed top-0 right-0 h-full w-full max-w-md bg-[#f9fafb] border-l border-slate-200 z-[90] flex flex-col shadow-xl"
             >
-              <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-soft)]">
+              <div className="flex items-center justify-between p-4 border-b border-slate-200/90 bg-white/80">
                 <h2 className="text-sm font-semibold text-[var(--color-text-heading)] truncate pr-2">
                   {threadTitle}
                 </h2>
