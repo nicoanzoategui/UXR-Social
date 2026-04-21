@@ -176,18 +176,40 @@ export default function ConversacionesPage() {
 
   const openThread = async (
     c: Record<string, unknown>,
-    opts?: { authorThread?: boolean }
+    opts?: { threadComments?: Record<string, unknown>[] }
   ) => {
     setPanelOpen(true);
     setThreadLoading(true);
     setThreadTitle(String(c.author_name || "Mensaje"));
+
+    const onlyThese = opts?.threadComments;
+    if (onlyThese && onlyThese.length > 0) {
+      try {
+        const rows = [...onlyThese].sort(
+          (a, b) =>
+            new Date(String(a.comment_date)).getTime() -
+            new Date(String(b.comment_date)).getTime()
+        );
+        const author = String(c.author_name || "").trim();
+        setThreadTitle(
+          `${author || "Usuario"} · ${rows.length} mensaje${rows.length === 1 ? "" : "s"}`
+        );
+        setThreadMessages(rows);
+      } catch (e) {
+        console.error(e);
+        setThreadMessages([c]);
+      } finally {
+        setThreadLoading(false);
+      }
+      return;
+    }
+
     const net = String(c.network || "");
-    const forceAuthor = opts?.authorThread === true;
 
     try {
       let rows: Record<string, unknown>[] = [];
 
-      if (!forceAuthor && net === "Chatbot" && c.session_id) {
+      if (net === "Chatbot" && c.session_id) {
         const r = await getCommentsPaged({
           session_id: String(c.session_id),
           limit: 500,
@@ -195,7 +217,7 @@ export default function ConversacionesPage() {
         });
         rows = r.items;
         setThreadTitle(`Sesión · ${String(c.session_id).slice(0, 24)}…`);
-      } else if (!forceAuthor && c.post_id) {
+      } else if (c.post_id) {
         const r = await getCommentsPaged({
           post_id: String(c.post_id),
           limit: 500,
@@ -204,25 +226,8 @@ export default function ConversacionesPage() {
         rows = r.items;
         setThreadTitle("Hilo del post");
       } else {
-        const author = String(c.author_name || "").trim();
-        if (!author) {
-          rows = [c];
-          setThreadTitle("Mensaje");
-        } else {
-          const r = await getCommentsPaged({
-            network: buildNetworkParam(),
-            start_date: dateRange.start || undefined,
-            end_date: dateRange.end || undefined,
-            search: searchApplied || undefined,
-            author_name: author,
-            limit: 500,
-            offset: 0,
-          });
-          rows = r.items.length ? r.items : [c];
-          setThreadTitle(
-            `${author} · ${rows.length} mensaje${rows.length === 1 ? "" : "s"}`
-          );
-        }
+        rows = [c];
+        setThreadTitle(String(c.author_name || "Mensaje"));
       }
 
       rows = [...rows].sort(
@@ -378,7 +383,11 @@ export default function ConversacionesPage() {
                 <li key={g.key}>
                   <button
                     type="button"
-                    onClick={() => openThread(c, { authorThread: multi })}
+                    onClick={() =>
+                      multi
+                        ? openThread(c, { threadComments: g.comments })
+                        : openThread(c)
+                    }
                     className={`w-full text-left p-5 transition-all duration-200 flex flex-col gap-2 hover:bg-[#f8fafc] ${
                       multi
                         ? "border-l-[3px] border-l-[#3b82f6] bg-white/80"
