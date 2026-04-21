@@ -17,6 +17,28 @@ import TrendsChart from "@/components/TrendsChart";
 const REDES = "Instagram,Facebook,LinkedIn,X,google_maps";
 const ALL = `${REDES},Chatbot`;
 
+/** Primario vibrante para CTAs e interactivos */
+const PRIMARY = "#2563eb";
+
+const METRIC_STYLES = [
+  {
+    accent: "#3b82f6",
+    gradient: "linear-gradient(145deg, #f9fafb 0%, rgba(59, 130, 246, 0.08) 100%)",
+  },
+  {
+    accent: "#10b981",
+    gradient: "linear-gradient(145deg, #f9fafb 0%, rgba(16, 185, 129, 0.08) 100%)",
+  },
+  {
+    accent: "#8b5cf6",
+    gradient: "linear-gradient(145deg, #f9fafb 0%, rgba(139, 92, 246, 0.08) 100%)",
+  },
+  {
+    accent: "#f59e0b",
+    gradient: "linear-gradient(145deg, #f9fafb 0%, rgba(245, 158, 11, 0.09) 100%)",
+  },
+] as const;
+
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -141,9 +163,15 @@ export default function DashboardPage() {
         </p>
       </header>
 
-      <div className="card card-pad-lg border border-[var(--color-border-soft)] space-y-4">
+      <div
+        className="rounded-xl border border-slate-200/80 p-5 md:p-6 space-y-4 shadow-sm bg-[#f9fafb]"
+        style={{
+          backgroundImage:
+            "linear-gradient(180deg, #f9fafb 0%, rgba(37, 99, 235, 0.04) 100%)",
+        }}
+      >
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-widest mr-2">
+          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mr-2">
             Periodo
           </span>
           {[
@@ -160,18 +188,23 @@ export default function DashboardPage() {
                   ? clearFilters()
                   : applyPreset(preset.days, preset.label)
               }
-              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-colors ${
+              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all duration-300 ease-out ${
                 activePreset === preset.label
-                  ? "bg-[var(--color-primary-800)] text-white border-[var(--color-primary-800)]"
-                  : "bg-white text-[var(--color-text-muted)] border-[var(--color-border-soft)] hover:bg-[var(--color-bg-soft)]"
+                  ? "text-white shadow-md scale-[1.02]"
+                  : "bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:bg-blue-50/60 hover:text-slate-800 hover:shadow-sm"
               }`}
+              style={
+                activePreset === preset.label
+                  ? { backgroundColor: PRIMARY, borderColor: PRIMARY }
+                  : undefined
+              }
             >
               {preset.text}
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-[var(--color-border-soft)]">
-          <Calendar className="w-4 h-4 text-[var(--color-text-muted)]" />
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-200/80">
+          <Calendar className="w-4 h-4 text-slate-500" />
           <input
             type="date"
             value={dateRange.start}
@@ -179,9 +212,9 @@ export default function DashboardPage() {
               setDateRange((p) => ({ ...p, start: e.target.value }));
               setActivePreset("custom");
             }}
-            className="bg-[var(--color-bg-soft)] border border-[var(--color-border-soft)] rounded-lg px-3 py-2 text-xs"
+            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 transition-all duration-200 hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none"
           />
-          <span className="text-[var(--color-text-muted)]">→</span>
+          <span className="text-slate-400">→</span>
           <input
             type="date"
             value={dateRange.end}
@@ -189,7 +222,7 @@ export default function DashboardPage() {
               setDateRange((p) => ({ ...p, end: e.target.value }));
               setActivePreset("custom");
             }}
-            className="bg-[var(--color-bg-soft)] border border-[var(--color-border-soft)] rounded-lg px-3 py-2 text-xs"
+            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 transition-all duration-200 hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none"
           />
         </div>
       </div>
@@ -216,31 +249,44 @@ export default function DashboardPage() {
             value: uniqueTopics,
             icon: Tags,
           },
-        ].map((m, i) => (
-          <motion.div
-            key={m.label}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="card p-5 border border-[var(--color-border-soft)] flex items-start gap-3"
-          >
-            <div className="w-10 h-10 rounded-lg bg-[var(--color-bg-soft)] flex items-center justify-center border border-[var(--color-border-soft)] text-[var(--color-text-muted)]">
-              <m.icon className="w-5 h-5" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-[var(--color-text-muted)] uppercase tracking-widest">
-                {m.label}
-              </p>
-              <p className="text-2xl font-semibold text-[var(--color-text-heading)] mt-1">
-                {m.value}
-              </p>
-            </div>
-          </motion.div>
-        ))}
+        ].map((m, i) => {
+          const style = METRIC_STYLES[i];
+          return (
+            <motion.div
+              key={m.label}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="group relative overflow-hidden rounded-xl border-x border-b border-slate-200/90 border-t-4 p-5 shadow-sm flex items-start gap-3 transition-all duration-300 ease-out hover:shadow-md hover:-translate-y-1 hover:border-slate-300/80"
+              style={{
+                background: style.gradient,
+                borderTopColor: style.accent,
+              }}
+            >
+              <div
+                className="w-11 h-11 rounded-xl flex items-center justify-center shadow-sm transition-transform duration-300 group-hover:scale-105"
+                style={{
+                  backgroundColor: `${style.accent}18`,
+                  color: style.accent,
+                }}
+              >
+                <m.icon className="w-5 h-5" strokeWidth={2.25} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                  {m.label}
+                </p>
+                <p className="text-2xl font-semibold text-slate-900 mt-1 tabular-nums">
+                  {m.value}
+                </p>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
 
-      <div className="card card-pad-lg border border-[var(--color-border-soft)]">
-        <h2 className="heading-md text-lg mb-6">Top 5 temas</h2>
+      <div className="rounded-xl border border-slate-200/80 p-6 md:p-8 shadow-sm bg-[#f9fafb] transition-all duration-300 hover:shadow-md">
+        <h2 className="heading-md text-lg mb-6 text-slate-900">Top 5 temas</h2>
         <div className="space-y-4">
           {topThemes.length === 0 ? (
             <p className="text-sm text-[var(--color-text-muted)] italic">
@@ -257,9 +303,9 @@ export default function DashboardPage() {
                     {row.count}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-[var(--color-bg-soft)] border border-[var(--color-border-soft)] overflow-hidden">
+                <div className="h-2 rounded-full bg-slate-200/80 border border-slate-200 overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-[var(--color-primary-600)] opacity-80"
+                    className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 shadow-sm"
                     style={{
                       width: `${(row.count / maxTopicCount) * 100}%`,
                     }}
@@ -274,14 +320,20 @@ export default function DashboardPage() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card card-pad-lg border border-[var(--color-border-soft)] min-h-[400px]"
+        className="rounded-xl border border-slate-200/80 p-6 md:p-8 shadow-sm bg-[#f9fafb] min-h-[400px] transition-all duration-300 hover:shadow-md"
+        style={{
+          backgroundImage:
+            "linear-gradient(165deg, #f9fafb 0%, rgba(37, 99, 235, 0.05) 55%, #f9fafb 100%)",
+        }}
       >
         <div className="mb-6">
-          <h2 className="heading-md text-lg flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-[var(--color-text-muted)]" />
+          <h2 className="heading-md text-lg flex items-center gap-2 text-slate-900">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+              <Calendar className="w-5 h-5" />
+            </span>
             Tendencias
           </h2>
-          <p className="body-sm mt-1 text-[var(--color-text-muted)]">
+          <p className="body-sm mt-2 text-slate-600">
             Evolución en el tiempo (redes + chatbot).
           </p>
         </div>
@@ -293,7 +345,7 @@ export default function DashboardPage() {
       <div className="flex flex-wrap gap-4">
         <Link
           href="/conversaciones"
-          className="inline-flex items-center gap-2 px-5 py-3 rounded-lg border border-[var(--color-border-soft)] bg-[var(--color-bg-surface)] text-sm font-semibold text-[var(--color-text-body)] hover:bg-[var(--color-bg-soft)] transition-colors"
+          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-blue-600/20 bg-[#2563eb] text-sm font-semibold text-white shadow-md transition-all duration-300 hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         >
           Ver conversaciones
           <ArrowRight className="w-4 h-4" />

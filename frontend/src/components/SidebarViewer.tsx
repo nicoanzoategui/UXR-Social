@@ -41,10 +41,10 @@ export default function SidebarViewer() {
   }, []);
 
   return (
-    <div className="w-64 h-screen bg-white border-r border-[var(--color-border-soft)] flex flex-col fixed left-0 top-0 shadow-sm z-50">
+    <div className="w-64 h-screen bg-slate-50 border-r border-slate-200 flex flex-col fixed left-0 top-0 shadow-sm z-50">
       <div className="p-8">
-        <h1 className="logo text-4xl mb-1 text-slate-900">UX</h1>
-        <p className="eyebrow mt-2 text-slate-500">UXR Social</p>
+        <h1 className="logo text-4xl mb-1 text-slate-900 tracking-tight">UX</h1>
+        <p className="eyebrow mt-2 text-slate-700 font-semibold">UXR Social</p>
       </div>
 
       <nav className="flex-1 px-4 space-y-1 mt-6">
@@ -55,26 +55,19 @@ export default function SidebarViewer() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 px-4 py-3 transition-all duration-200 group",
+                "flex items-center gap-3 px-4 py-3 transition-all duration-300 ease-out rounded-xl group",
                 isActive
-                  ? "bg-[rgba(55,53,47,0.08)] text-[#37352f] font-medium rounded-[6px]"
-                  : "rounded-xl text-[var(--color-text-muted)] hover:text-[var(--color-primary-700)] hover:bg-[var(--color-bg-soft)]/50"
+                  ? "bg-blue-50 text-blue-900 font-semibold shadow-sm ring-1 ring-blue-200/80"
+                  : "text-slate-700 hover:text-slate-900 hover:bg-white hover:shadow-sm"
               )}
             >
               <item.icon
                 className={cn(
-                  "w-5 h-5 transition-transform duration-200 group-hover:scale-110",
-                  isActive
-                    ? "text-[#37352f]"
-                    : "text-[var(--color-text-muted)] group-hover:text-[var(--color-primary-600)]"
+                  "w-5 h-5 shrink-0 transition-all duration-300 group-hover:scale-105",
+                  isActive ? "text-blue-600" : "text-slate-500 group-hover:text-blue-600"
                 )}
               />
-              <span
-                className={cn(
-                  "tracking-tight",
-                  isActive ? "font-medium" : "font-semibold"
-                )}
-              >
+              <span className={cn("tracking-tight", isActive ? "font-semibold" : "font-medium")}>
                 {item.name}
               </span>
             </Link>
@@ -83,7 +76,7 @@ export default function SidebarViewer() {
         {isAdmin && (
           <>
             <div className="px-4 pt-4 pb-1">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
                 ADMINISTRACIÓN
               </p>
             </div>
@@ -99,26 +92,19 @@ export default function SidebarViewer() {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-3 px-4 py-3 transition-all duration-200 group",
+                    "flex items-center gap-3 px-4 py-3 transition-all duration-300 ease-out rounded-xl group",
                     isActive
-                      ? "bg-[rgba(55,53,47,0.08)] text-[#37352f] font-medium rounded-[6px]"
-                      : "rounded-xl text-[var(--color-text-muted)] hover:text-[var(--color-primary-700)] hover:bg-[var(--color-bg-soft)]/50"
+                      ? "bg-blue-50 text-blue-900 font-semibold shadow-sm ring-1 ring-blue-200/80"
+                      : "text-slate-700 hover:text-slate-900 hover:bg-white hover:shadow-sm"
                   )}
                 >
                   <item.icon
                     className={cn(
-                      "w-5 h-5 transition-transform duration-200 group-hover:scale-110",
-                      isActive
-                        ? "text-[#37352f]"
-                        : "text-[var(--color-text-muted)] group-hover:text-[var(--color-primary-600)]"
+                      "w-5 h-5 shrink-0 transition-all duration-300 group-hover:scale-105",
+                      isActive ? "text-blue-600" : "text-slate-500 group-hover:text-blue-600"
                     )}
                   />
-                  <span
-                    className={cn(
-                      "tracking-tight",
-                      isActive ? "font-medium" : "font-semibold"
-                    )}
-                  >
+                  <span className={cn("tracking-tight", isActive ? "font-semibold" : "font-medium")}>
                     {item.name}
                   </span>
                 </Link>
@@ -128,9 +114,9 @@ export default function SidebarViewer() {
         )}
       </nav>
 
-      <div className="p-6 border-t border-[var(--color-border-soft)] space-y-2">
-        <div className="flex items-center gap-3 px-4 py-3 rounded-xl text-[var(--color-text-muted)] hover:text-[var(--color-primary-700)] hover:bg-[var(--color-bg-soft)]/50 cursor-pointer transition-all">
-          <Settings className="w-5 h-5" />
+      <div className="p-6 border-t border-slate-200 bg-slate-50/80 space-y-2">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-700 hover:text-slate-900 hover:bg-white cursor-pointer transition-all duration-300 hover:shadow-sm">
+          <Settings className="w-5 h-5 text-slate-500" />
           <span className="font-semibold tracking-tight">Configuración</span>
         </div>
         <div
@@ -141,9 +127,9 @@ export default function SidebarViewer() {
               window.location.href = "/blocked";
             }
           }}
-          className="flex items-center gap-3 px-4 py-3 rounded-xl text-rose-500 hover:bg-rose-50/50 cursor-pointer transition-all"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl text-rose-700 hover:bg-rose-50 cursor-pointer transition-all duration-300 hover:shadow-sm"
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut className="w-5 h-5 shrink-0" />
           <span className="font-semibold tracking-tight">Cerrar Sesión</span>
         </div>
       </div>
