@@ -315,7 +315,7 @@ export default function ReportsPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-8 pb-12">
       <header className="flex items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-md">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#3b82f6] text-white shadow-md">
           <FileText className="h-6 w-6" />
         </div>
         <div>
@@ -458,7 +458,7 @@ export default function ReportsPage() {
                         <div className="mt-3 space-y-3">
                           <div
                             className="whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800"
-                            style={{ borderLeftWidth: 3, borderLeftColor: "#2563eb" }}
+                            style={{ borderLeftWidth: 3, borderLeftColor: "#3b82f6" }}
                           >
                             {aiSummaryByTheme[row.topic]}
                           </div>
@@ -530,7 +530,7 @@ export default function ReportsPage() {
               {consolidatedSummary && consolidatedVisible ? (
                 <div
                   className="mt-4 max-h-[min(520px,60vh)] overflow-y-auto whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 p-4 text-sm leading-relaxed text-slate-800"
-                  style={{ borderLeftWidth: 3, borderLeftColor: "#2563eb" }}
+                  style={{ borderLeftWidth: 3, borderLeftColor: "#3b82f6" }}
                 >
                   {consolidatedSummary}
                 </div>

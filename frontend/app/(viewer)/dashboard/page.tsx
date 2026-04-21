@@ -13,31 +13,22 @@ import {
 import { motion } from "framer-motion";
 import { getSummary, getTrends, getTopics } from "@/lib/api";
 import TrendsChart from "@/components/TrendsChart";
-import { viewerCardGradient } from "@/lib/viewer-ui";
+import {
+  viewerBtnPrimary,
+  viewerCardGradient,
+  viewerInput,
+  viewerTabActive,
+  viewerTabInactive,
+} from "@/lib/viewer-ui";
 
-const REDES = "Instagram,Facebook,LinkedIn,X,google_maps";
+const REDES = "Instagram,Facebook,LinkedIn,X";
 const ALL = `${REDES},Chatbot`;
 
-/** Primario vibrante para CTAs e interactivos */
-const PRIMARY = "#2563eb";
-
 const METRIC_STYLES = [
-  {
-    accent: "#3b82f6",
-    gradient: "linear-gradient(145deg, #f9fafb 0%, rgba(59, 130, 246, 0.08) 100%)",
-  },
-  {
-    accent: "#10b981",
-    gradient: "linear-gradient(145deg, #f9fafb 0%, rgba(16, 185, 129, 0.08) 100%)",
-  },
-  {
-    accent: "#8b5cf6",
-    gradient: "linear-gradient(145deg, #f9fafb 0%, rgba(139, 92, 246, 0.08) 100%)",
-  },
-  {
-    accent: "#f59e0b",
-    gradient: "linear-gradient(145deg, #f9fafb 0%, rgba(245, 158, 11, 0.09) 100%)",
-  },
+  { accent: "#3b82f6" },
+  { accent: "#0d9488" },
+  { accent: "#10b981" },
+  { accent: "#f59e0b" },
 ] as const;
 
 export default function DashboardPage() {
@@ -150,7 +141,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-10 pb-12">
+    <div className="space-y-6 pb-12">
       {fetchError && (
         <div className="bg-rose-50 border border-[var(--color-border-soft)] text-rose-800 px-4 py-3 rounded-lg text-sm font-medium">
           {fetchError}
@@ -158,15 +149,17 @@ export default function DashboardPage() {
       )}
 
       <header>
-        <h1 className="heading-xl">Dashboard</h1>
-        <p className="body-md mt-2 text-[var(--color-text-muted)]">
+        <h1 className="text-2xl font-bold leading-tight text-[#1e293b] md:text-3xl">
+          Dashboard
+        </h1>
+        <p className="mt-2 text-base text-[#64748b]">
           Resumen de actividad en redes y chatbot.
         </p>
       </header>
 
-        <div className={`${viewerCardGradient} space-y-4`}>
+      <div className={`${viewerCardGradient} space-y-4`}>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest mr-2">
+          <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-[#64748b]">
             Periodo
           </span>
           {[
@@ -183,23 +176,16 @@ export default function DashboardPage() {
                   ? clearFilters()
                   : applyPreset(preset.days, preset.label)
               }
-              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all duration-300 ease-out ${
-                activePreset === preset.label
-                  ? "text-white shadow-md scale-[1.02]"
-                  : "bg-white text-slate-600 border-slate-200 hover:border-blue-300 hover:bg-blue-50/60 hover:text-slate-800 hover:shadow-sm"
+              className={`transition-all duration-300 ease-out ${
+                activePreset === preset.label ? viewerTabActive : viewerTabInactive
               }`}
-              style={
-                activePreset === preset.label
-                  ? { backgroundColor: PRIMARY, borderColor: PRIMARY }
-                  : undefined
-              }
             >
               {preset.text}
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-200/80">
-          <Calendar className="w-4 h-4 text-slate-500" />
+        <div className="flex flex-wrap items-center gap-3 border-t border-[#e2e8f0] pt-4">
+          <Calendar className="h-4 w-4 shrink-0 text-[#64748b]" />
           <input
             type="date"
             value={dateRange.start}
@@ -207,9 +193,9 @@ export default function DashboardPage() {
               setDateRange((p) => ({ ...p, start: e.target.value }));
               setActivePreset("custom");
             }}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 transition-all duration-200 hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none"
+            className={`${viewerInput} text-xs`}
           />
-          <span className="text-slate-400">→</span>
+          <span className="text-[#94a3b8]">→</span>
           <input
             type="date"
             value={dateRange.end}
@@ -217,12 +203,12 @@ export default function DashboardPage() {
               setDateRange((p) => ({ ...p, end: e.target.value }));
               setActivePreset("custom");
             }}
-            className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 transition-all duration-200 hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none"
+            className={`${viewerInput} text-xs`}
           />
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
             label: "Total mensajes",
@@ -252,26 +238,20 @@ export default function DashboardPage() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
-              className="group relative overflow-hidden rounded-xl border-x border-b border-slate-200/90 border-t-4 p-5 shadow-sm flex items-start gap-3 transition-all duration-300 ease-out hover:shadow-md hover:-translate-y-1 hover:border-slate-300/80"
-              style={{
-                background: style.gradient,
-                borderTopColor: style.accent,
-              }}
+              className="group relative flex items-start gap-4 overflow-hidden rounded-[24px] border border-[#e2e8f0] bg-white p-6 shadow-[0_1px_3px_rgba(0,0,0,0.05)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
             >
               <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center shadow-sm transition-transform duration-300 group-hover:scale-105"
-                style={{
-                  backgroundColor: `${style.accent}18`,
-                  color: style.accent,
-                }}
+                className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full"
+                style={{ backgroundColor: style.accent }}
               >
-                <m.icon className="w-5 h-5" strokeWidth={2.25} />
+                <div className="absolute inset-0 bg-white/20" aria-hidden />
+                <m.icon className="relative h-6 w-6 text-white" strokeWidth={2.25} />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                <p className="text-sm font-medium uppercase tracking-wide text-[#64748b]">
                   {m.label}
                 </p>
-                <p className="text-2xl font-semibold text-slate-900 mt-1 tabular-nums">
+                <p className="mt-1 text-4xl font-bold tabular-nums leading-tight text-[#1e293b] md:text-5xl">
                   {m.value}
                 </p>
               </div>
@@ -281,7 +261,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="card card-pad-lg card-interactive">
-        <h2 className="heading-md text-lg mb-6 text-slate-900">Top 5 temas</h2>
+        <h2 className="section-title mb-2">Top 5 temas</h2>
+        <p className="section-subtitle mb-6">Temas más frecuentes en el periodo seleccionado.</p>
         <div className="space-y-4">
           {topThemes.length === 0 ? (
             <p className="text-sm text-[var(--color-text-muted)] italic">
@@ -298,9 +279,9 @@ export default function DashboardPage() {
                     {row.count}
                   </span>
                 </div>
-                <div className="h-2 rounded-full bg-slate-200/80 border border-slate-200 overflow-hidden">
+                <div className="h-2 overflow-hidden rounded-full border border-[#e2e8f0] bg-[#f1f5f9]">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 shadow-sm"
+                    className="h-full rounded-full bg-[#3b82f6] shadow-sm transition-[width] duration-300"
                     style={{
                       width: `${(row.count / maxTopicCount) * 100}%`,
                     }}
@@ -318,13 +299,14 @@ export default function DashboardPage() {
         className={`${viewerCardGradient} min-h-[400px] hover:shadow-md`}
       >
         <div className="mb-6">
-          <h2 className="heading-md text-lg flex items-center gap-2 text-slate-900">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
-              <Calendar className="w-5 h-5" />
+          <h2 className="flex items-center gap-3 text-2xl font-bold leading-tight text-[#1e293b]">
+            <span className="relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-[#3b82f6]">
+              <span className="absolute inset-0 bg-white/20" aria-hidden />
+              <Calendar className="relative h-6 w-6 text-white" />
             </span>
             Tendencias
           </h2>
-          <p className="body-sm mt-2 text-slate-600">
+          <p className="mt-2 text-base text-[#64748b]">
             Evolución en el tiempo (redes + chatbot).
           </p>
         </div>
@@ -334,12 +316,9 @@ export default function DashboardPage() {
       </motion.div>
 
       <div className="flex flex-wrap gap-4">
-        <Link
-          href="/conversaciones"
-          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-blue-600/20 bg-[#2563eb] text-sm font-semibold text-white shadow-md transition-all duration-300 hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >
+        <Link href="/conversaciones" className={viewerBtnPrimary}>
           Ver conversaciones
-          <ArrowRight className="w-4 h-4" />
+          <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
     </div>

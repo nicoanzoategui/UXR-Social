@@ -29,10 +29,12 @@ interface TrendsChartProps {
 }
 
 const NETWORK_COLORS: { [key: string]: { border: string; bg: string } } = {
-  'Instagram': { border: '#EC4899', bg: 'rgba(236, 72, 153, 0.1)' },
-  'Facebook': { border: '#3B82F6', bg: 'rgba(59, 130, 246, 0.1)' },
-  'LinkedIn': { border: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.1)' },
-  'X': { border: '#64748B', bg: 'rgba(100, 116, 139, 0.1)' },
+  Instagram: { border: "#EC4899", bg: "rgba(236, 72, 153, 0.1)" },
+  Facebook: { border: "#3B82F6", bg: "rgba(59, 130, 246, 0.1)" },
+  LinkedIn: { border: "#0EA5E9", bg: "rgba(14, 165, 233, 0.1)" },
+  X: { border: "#64748B", bg: "rgba(100, 116, 139, 0.1)" },
+  Chatbot: { border: "#0d9488", bg: "rgba(13, 148, 136, 0.12)" },
+  google_maps: { border: "#64748B", bg: "rgba(100, 116, 139, 0.1)" },
 };
 
 export default function TrendsChart({ data }: TrendsChartProps) {

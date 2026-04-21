@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Search,
   X,
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  MessagesSquare,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { getCommentsPaged } from "@/lib/api";
@@ -20,10 +21,49 @@ import {
 } from "@/lib/viewer-ui";
 
 const PAGE_SIZE = 50;
-const REDES_NETWORKS = "Instagram,Facebook,LinkedIn,X,google_maps";
+const REDES_NETWORKS = "Instagram,Facebook,LinkedIn,X";
 const ALL_NETWORKS = `${REDES_NETWORKS},Chatbot`;
 
 type TabId = "todos" | "redes" | "chatbot";
+
+type AuthorGroup = {
+  key: string;
+  comments: Record<string, unknown>[];
+  latest: Record<string, unknown>;
+};
+
+function normalizeAuthorKey(c: Record<string, unknown>): string {
+  const name = String(c.author_name || "").trim().toLowerCase();
+  return name || `__id_${String(c.id)}`;
+}
+
+function groupItemsByAuthor(items: Record<string, unknown>[]): AuthorGroup[] {
+  const map = new Map<string, Record<string, unknown>[]>();
+  for (const c of items) {
+    const k = normalizeAuthorKey(c);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(c);
+  }
+  const groups: AuthorGroup[] = [];
+  for (const [key, comments] of map) {
+    const sorted = [...comments].sort(
+      (a, b) =>
+        new Date(String(b.comment_date)).getTime() -
+        new Date(String(a.comment_date)).getTime()
+    );
+    groups.push({ key, comments: sorted, latest: sorted[0] });
+  }
+  groups.sort(
+    (a, b) =>
+      new Date(String(b.latest.comment_date)).getTime() -
+      new Date(String(a.latest.comment_date)).getTime()
+  );
+  return groups;
+}
+
+function uniqueNetworks(comments: Record<string, unknown>[]): string[] {
+  return [...new Set(comments.map((c) => String(c.network || "")).filter(Boolean))];
+}
 
 function OriginBadge({ network }: { network: string }) {
   const label =
@@ -134,14 +174,20 @@ export default function ConversacionesPage() {
     );
   };
 
-  const openThread = async (c: Record<string, unknown>) => {
+  const openThread = async (
+    c: Record<string, unknown>,
+    opts?: { authorThread?: boolean }
+  ) => {
     setPanelOpen(true);
     setThreadLoading(true);
     setThreadTitle(String(c.author_name || "Mensaje"));
+    const net = String(c.network || "");
+    const forceAuthor = opts?.authorThread === true;
+
     try {
-      const net = String(c.network || "");
       let rows: Record<string, unknown>[] = [];
-      if (net === "Chatbot" && c.session_id) {
+
+      if (!forceAuthor && net === "Chatbot" && c.session_id) {
         const r = await getCommentsPaged({
           session_id: String(c.session_id),
           limit: 500,
@@ -149,18 +195,36 @@ export default function ConversacionesPage() {
         });
         rows = r.items;
         setThreadTitle(`Sesión · ${String(c.session_id).slice(0, 24)}…`);
-      } else if (c.post_id) {
+      } else if (!forceAuthor && c.post_id) {
         const r = await getCommentsPaged({
           post_id: String(c.post_id),
           limit: 500,
           offset: 0,
         });
         rows = r.items;
-        setThreadTitle(`Hilo del post`);
+        setThreadTitle("Hilo del post");
       } else {
-        rows = [c];
-        setThreadTitle(String(c.author_name || "Mensaje"));
+        const author = String(c.author_name || "").trim();
+        if (!author) {
+          rows = [c];
+          setThreadTitle("Mensaje");
+        } else {
+          const r = await getCommentsPaged({
+            network: buildNetworkParam(),
+            start_date: dateRange.start || undefined,
+            end_date: dateRange.end || undefined,
+            search: searchApplied || undefined,
+            author_name: author,
+            limit: 500,
+            offset: 0,
+          });
+          rows = r.items.length ? r.items : [c];
+          setThreadTitle(
+            `${author} · ${rows.length} mensaje${rows.length === 1 ? "" : "s"}`
+          );
+        }
       }
+
       rows = [...rows].sort(
         (a, b) =>
           new Date(String(a.comment_date)).getTime() -
@@ -175,6 +239,8 @@ export default function ConversacionesPage() {
     }
   };
 
+  const groupedItems = useMemo(() => groupItemsByAuthor(items), [items]);
+
   const closePanel = () => {
     setPanelOpen(false);
     setThreadMessages([]);
@@ -188,7 +254,6 @@ export default function ConversacionesPage() {
     { id: "Facebook", label: "FB" },
     { id: "LinkedIn", label: "LI" },
     { id: "X", label: "X" },
-    { id: "google_maps", label: "Maps" },
   ];
 
   return (
@@ -212,7 +277,7 @@ export default function ConversacionesPage() {
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 border ${
+            className={`transition-all duration-300 ${
               tab === t.id ? viewerTabActive : viewerTabInactive
             }`}
           >
@@ -303,32 +368,64 @@ export default function ConversacionesPage() {
             No hay mensajes con estos filtros.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-200/90">
-            {items.map((c) => (
-              <li key={String(c.id)}>
-                <button
-                  type="button"
-                  onClick={() => openThread(c)}
-                  className="w-full text-left p-5 hover:bg-blue-50/40 transition-all duration-200 flex flex-col gap-2"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <OriginBadge network={String(c.network || "")} />
-                    <ThemeBadge theme={c.theme as string} />
-                    <span className="text-xs text-[var(--color-text-muted)] ml-auto">
-                      {c.comment_date
-                        ? new Date(String(c.comment_date)).toLocaleString()
-                        : ""}
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold text-[var(--color-text-heading)]">
-                    {String(c.author_name || "—")}
-                  </p>
-                  <p className="text-sm text-[var(--color-text-body)] line-clamp-3">
-                    {String(c.comment_text || "")}
-                  </p>
-                </button>
-              </li>
-            ))}
+          <ul className="divide-y divide-[#e2e8f0]">
+            {groupedItems.map((g) => {
+              const c = g.latest;
+              const n = g.comments.length;
+              const multi = n > 1;
+              const nets = uniqueNetworks(g.comments);
+              return (
+                <li key={g.key}>
+                  <button
+                    type="button"
+                    onClick={() => openThread(c, { authorThread: multi })}
+                    className={`w-full text-left p-5 transition-all duration-200 flex flex-col gap-2 hover:bg-[#f8fafc] ${
+                      multi
+                        ? "border-l-[3px] border-l-[#3b82f6] bg-white/80"
+                        : ""
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      {multi ? (
+                        <span className="inline-flex items-center gap-1 rounded-[20px] bg-[#eff6ff] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#2563eb]">
+                          <MessagesSquare className="h-3.5 w-3.5" />
+                          Hilo · {n} mensajes
+                        </span>
+                      ) : null}
+                      {nets.length <= 2
+                        ? nets.map((net) => (
+                            <OriginBadge key={net} network={net} />
+                          ))
+                        : (
+                            <>
+                              <OriginBadge network={nets[0]} />
+                              <span className="text-[10px] font-medium text-[#64748b]">
+                                +{nets.length - 1} redes
+                              </span>
+                            </>
+                          )}
+                      {!multi ? (
+                        <ThemeBadge theme={c.theme as string} />
+                      ) : null}
+                      <span className="text-xs text-[#64748b] ml-auto">
+                        {c.comment_date
+                          ? new Date(String(c.comment_date)).toLocaleString()
+                          : ""}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold text-[#1e293b] break-words">
+                      {String(c.author_name || "—")}
+                    </p>
+                    <p className="text-sm text-[#1e293b] line-clamp-3 text-left">
+                      {multi ? (
+                        <span className="text-[#64748b]">Último: </span>
+                      ) : null}
+                      {String(c.comment_text || "")}
+                    </p>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
 

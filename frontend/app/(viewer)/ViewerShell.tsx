@@ -10,8 +10,8 @@ export default function ViewerShell({
   return (
     <div className="flex min-h-screen bg-[var(--color-bg-page)]">
       <SidebarViewer />
-      <main className="flex-1 ml-64 p-8 min-h-screen">
-        <div className="container max-w-7xl mx-auto">{children}</div>
+      <main className="flex-1 ml-64 min-h-screen p-4 md:p-8">
+        <div className="mx-auto w-full max-w-[1400px]">{children}</div>
       </main>
     </div>
   );

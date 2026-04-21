@@ -122,7 +122,7 @@ export default function UsersPage() {
           </AnimatePresence>
 
           <div className="flex items-center gap-4 mb-8">
-            <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-md shadow-blue-500/25">
+            <div className="w-12 h-12 bg-[#3b82f6] rounded-2xl flex items-center justify-center text-white shadow-md shadow-[#3b82f6]/25">
               <UserPlus className="w-6 h-6" />
             </div>
             <div>
@@ -143,7 +143,7 @@ export default function UsersPage() {
                 onChange={(e) => setNewUsername(e.target.value)}
                 placeholder="nombre_usuario"
                 autoComplete="username"
-                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-lg border border-[#e2e8f0] bg-white px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-slate-300 focus:border-[#3b82f6] focus:shadow-[0_0_0_3px_rgba(59,130,246,0.1)]"
               />
             </div>
 
@@ -158,7 +158,7 @@ export default function UsersPage() {
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="••••••••"
                 autoComplete="new-password"
-                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                className="w-full rounded-lg border border-[#e2e8f0] bg-white px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-slate-300 focus:border-[#3b82f6] focus:shadow-[0_0_0_3px_rgba(59,130,246,0.1)]"
               />
             </div>
 
@@ -169,7 +169,7 @@ export default function UsersPage() {
               <select
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value as "admin" | "viewer")}
-                className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-blue-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 appearance-none cursor-pointer"
+                className="w-full cursor-pointer appearance-none rounded-lg border border-[#e2e8f0] bg-white px-4 py-3 text-[var(--color-text-body)] font-semibold outline-none transition-all hover:border-slate-300 focus:border-[#3b82f6] focus:shadow-[0_0_0_3px_rgba(59,130,246,0.1)]"
                 style={{
                   backgroundImage:
                     'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 24 24\' stroke=\'%23677489\'%3E%3Cpath stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'2\' d=\'M19 9l-7 7-7-7\'/%3E%3C/svg%3E")',

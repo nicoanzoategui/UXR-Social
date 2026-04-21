@@ -141,9 +141,122 @@ class ShareValidateResponse(BaseModel):
     label: str
 
 
+def _build_consolidated_summary_prompt(report: dict) -> str:
+    """Mismo prompt que POST /analytics/consolidated-summary."""
+    payload = json.dumps(report, ensure_ascii=False, indent=2)
+    if len(payload) > 120_000:
+        payload = payload[:120_000] + "\n…[truncado]"
+    return (
+        "Actuá como analista de experiencia de usuario y social listening, "
+        "con criterio de investigación cualitativa + métricas. Vas a presentar esto a liderazgo de producto y CX.\n\n"
+        "Debajo tenés un JSON agregado (metadata, summary, distribution, topics, trends, top_problems, feedback_insights). "
+        "No copies el JSON ni hagas un inventario seco de números: interpretá qué significan para la experiencia del usuario "
+        "y para la operación en redes.\n\n"
+        "Redactá en español un informe coherente y con profundidad, usando ## para secciones. Incluí, en el orden que mejor "
+        "cuente la historia:\n"
+        "- **Apertura analítica**: en 3–5 oraciones, qué está pasando en el período (volumen, diversidad de redes/autores, "
+        "lectura global del clima).\n"
+        "- **Distribución y territorio de conversación**: qué canales concentran qué tipo de conversación y qué implica "
+        "para dónde hay que escuchar y responder.\n"
+        "- **Temas y narrativa de usuario**: cómo se reparten los temas; qué necesidades o tensiones sugiere esa mezcla "
+        "(conectá topics con summary/top_words solo como apoyo, no como listado).\n"
+        "- **Evolución temporal**: si trends aporta señal, contá si hay concentración, picos o calma; si es ruido o poco "
+        "datos, decilo con transparencia.\n"
+        "- **Soporte, fricción y feedback**: integrá top_problems y feedback_insights; si vienen vacíos, explicá qué eso "
+        "sugiere (p. ej. poco volumen en categorías profundas) sin inventar problemas.\n"
+        "- **Implicancias UX y próximos pasos**: 4–7 recomendaciones accionables, priorizadas, alineadas al JSON; "
+        "indicá para quién son (producto, contenido, community management, soporte).\n\n"
+        "Tono: profesional, directo, sin marketing. No inventes cifras ni hechos que no estén en los datos. "
+        "Si algo no se puede concluir, reconocelo.\n\n"
+        "Datos:\n"
+        + payload
+    )
+
+
+def _call_gemini_consolidated_summary(prompt: str) -> str:
+    if not GEMINI_API_KEY_VALUE:
+        raise RuntimeError("Sin GEMINI_API_KEY")
+    genai.configure(api_key=GEMINI_API_KEY_VALUE)
+    model = genai.GenerativeModel(GEMINI_GENERATION_MODEL)
+    resp = model.generate_content(prompt)
+    summary_str = (getattr(resp, "text", None) or "").strip()
+    if not summary_str:
+        raise RuntimeError("Respuesta vacía del modelo")
+    return summary_str
+
+
 class PDFGenerator:
     @staticmethod
-    def generate(data: dict, start_date: str, end_date: str):
+    def _split_bold_segments(s: str) -> str:
+        """Convierte **negrita** a <b>…</b> escapando el resto (subset HTML de ReportLab)."""
+        out: List[str] = []
+        i = 0
+        while True:
+            a = s.find("**", i)
+            if a == -1:
+                out.append(escape(s[i:]))
+                break
+            b = s.find("**", a + 2)
+            if b == -1:
+                out.append(escape(s[i:]))
+                break
+            out.append(escape(s[i:a]))
+            out.append("<b>" + escape(s[a + 2 : b]) + "</b>")
+            i = b + 2
+        return "".join(out)
+
+    @staticmethod
+    def _block_to_paragraph_xml(block: str) -> str:
+        lines = block.split("\n")
+        return "<br/>".join(PDFGenerator._split_bold_segments(L) for L in lines)
+
+    @staticmethod
+    def append_consolidated_narrative(elements, text: Optional[str], styles) -> None:
+        """Añade sección 'Resumen consolidado' con texto tipo markdown del modelo."""
+        if not text or not str(text).strip():
+            return
+        header_style = ParagraphStyle(
+            "PDFConsolidatedNarrative",
+            parent=styles["Heading2"],
+            fontSize=16,
+            spaceBefore=8,
+            spaceAfter=12,
+            textColor=colors.HexColor("#4f46e5"),
+        )
+        h3_style = ParagraphStyle(
+            "PDFAINarrH3",
+            parent=styles["Heading3"],
+            fontSize=12,
+            spaceBefore=10,
+            spaceAfter=6,
+            textColor=colors.HexColor("#1e293b"),
+        )
+        body_style = ParagraphStyle(
+            "PDFAINarrBody",
+            parent=styles["Normal"],
+            fontSize=10,
+            leading=14,
+            spaceAfter=8,
+        )
+        elements.append(Paragraph("Resumen consolidado", header_style))
+        for para in re.split(r"\n\s*\n+", text.strip()):
+            para = para.strip()
+            if not para:
+                continue
+            lines = para.split("\n", 1)
+            first = lines[0].strip()
+            rest = lines[1].strip() if len(lines) > 1 else ""
+            if first.startswith("##"):
+                title = first.lstrip("#").strip()
+                elements.append(Paragraph(PDFGenerator._split_bold_segments(title), h3_style))
+                if rest:
+                    elements.append(Paragraph(PDFGenerator._block_to_paragraph_xml(rest), body_style))
+            else:
+                elements.append(Paragraph(PDFGenerator._block_to_paragraph_xml(para), body_style))
+        elements.append(Spacer(1, 16))
+
+    @staticmethod
+    def generate(data: dict, start_date: str, end_date: str, ai_narrative: Optional[str] = None):
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
         styles = getSampleStyleSheet()
@@ -202,6 +315,8 @@ class PDFGenerator:
         ]))
         elements.append(t)
         elements.append(Spacer(1, 20))
+
+        PDFGenerator.append_consolidated_narrative(elements, ai_narrative, styles)
         
         # Topics Section
         elements.append(Paragraph("Distribución de Temas", header_style))
@@ -854,6 +969,7 @@ def get_comments(
     end_date: Optional[str] = None,
     post_id: Optional[str] = None,
     session_id: Optional[str] = None,
+    author_name: Optional[str] = None,
     limit: Optional[int] = Query(None, ge=1, le=500),
     offset: int = Query(0, ge=0),
     session: Session = Depends(get_session),
@@ -865,6 +981,8 @@ def get_comments(
         conditions.append(Comment.post_id == post_id)
     if session_id is not None:
         conditions.append(Comment.session_id == session_id)
+    if author_name is not None and str(author_name).strip():
+        conditions.append(Comment.author_name == str(author_name).strip())
 
     ds = _parse_range_start(start_date)
     if ds:
@@ -1523,7 +1641,13 @@ def download_consolidated_pdf(
         raise HTTPException(status_code=400, detail=str(detail))
     start_str = start_date or "inicio"
     end_str = end_date or "fin"
-    pdf_bytes = PDFGenerator.generate(report, start_str, end_str)
+    narrative = None
+    if GEMINI_API_KEY_VALUE:
+        try:
+            narrative = _call_gemini_consolidated_summary(_build_consolidated_summary_prompt(report))
+        except Exception as ex:
+            print(f"consolidated-pdf: resumen narrativo omitido: {ex}")
+    pdf_bytes = PDFGenerator.generate(report, start_str, end_str, ai_narrative=narrative)
     fname = _safe_attachment_filename("uxr_consolidado", start_str, end_str) + ".pdf"
     return Response(
         content=pdf_bytes,
@@ -1593,43 +1717,9 @@ def post_consolidated_summary(
             ),
         )
 
-    payload = json.dumps(report, ensure_ascii=False, indent=2)
-    if len(payload) > 120_000:
-        payload = payload[:120_000] + "\n…[truncado]"
-
-    prompt = (
-        "Actuá como analista de experiencia de usuario y social listening, "
-        "con criterio de investigación cualitativa + métricas. Vas a presentar esto a liderazgo de producto y CX.\n\n"
-        "Debajo tenés un JSON agregado (metadata, summary, distribution, topics, trends, top_problems, feedback_insights). "
-        "No copies el JSON ni hagas un inventario seco de números: interpretá qué significan para la experiencia del usuario "
-        "y para la operación en redes.\n\n"
-        "Redactá en español un informe coherente y con profundidad, usando ## para secciones. Incluí, en el orden que mejor "
-        "cuente la historia:\n"
-        "- **Apertura analítica**: en 3–5 oraciones, qué está pasando en el período (volumen, diversidad de redes/autores, "
-        "lectura global del clima).\n"
-        "- **Distribución y territorio de conversación**: qué canales concentran qué tipo de conversación y qué implica "
-        "para dónde hay que escuchar y responder.\n"
-        "- **Temas y narrativa de usuario**: cómo se reparten los temas; qué necesidades o tensiones sugiere esa mezcla "
-        "(conectá topics con summary/top_words solo como apoyo, no como listado).\n"
-        "- **Evolución temporal**: si trends aporta señal, contá si hay concentración, picos o calma; si es ruido o poco "
-        "datos, decilo con transparencia.\n"
-        "- **Soporte, fricción y feedback**: integrá top_problems y feedback_insights; si vienen vacíos, explicá qué eso "
-        "sugiere (p. ej. poco volumen en categorías profundas) sin inventar problemas.\n"
-        "- **Implicancias UX y próximos pasos**: 4–7 recomendaciones accionables, priorizadas, alineadas al JSON; "
-        "indicá para quién son (producto, contenido, community management, soporte).\n\n"
-        "Tono: profesional, directo, sin marketing. No inventes cifras ni hechos que no estén en los datos. "
-        "Si algo no se puede concluir, reconocelo.\n\n"
-        "Datos:\n"
-        + payload
-    )
-
     try:
-        genai.configure(api_key=GEMINI_API_KEY_VALUE)
-        model = genai.GenerativeModel(GEMINI_GENERATION_MODEL)
-        resp = model.generate_content(prompt)
-        summary_str = (getattr(resp, "text", None) or "").strip()
-        if not summary_str:
-            raise RuntimeError("Respuesta vacía del modelo")
+        prompt = _build_consolidated_summary_prompt(report)
+        summary_str = _call_gemini_consolidated_summary(prompt)
         return {"summary": summary_str}
     except HTTPException:
         raise
@@ -1647,10 +1737,21 @@ async def send_report(
         
     start_str = request.start_date or "Inicio"
     end_str = request.end_date or datetime.now().strftime("%Y-%m-%d")
-    
+
+    narrative = None
+    if request.report_data and GEMINI_API_KEY_VALUE:
+        try:
+            narrative = _call_gemini_consolidated_summary(
+                _build_consolidated_summary_prompt(request.report_data)
+            )
+        except Exception as ex:
+            print(f"send-report: resumen narrativo omitido: {ex}")
+
     # 1. Generate PDF
     try:
-        pdf_content = PDFGenerator.generate(request.report_data, start_str, end_str)
+        pdf_content = PDFGenerator.generate(
+            request.report_data, start_str, end_str, ai_narrative=narrative
+        )
     except Exception as e:
         print(f"Error generating PDF: {e}")
         raise HTTPException(status_code=500, detail=f"Error al generar PDF: {str(e)}")
