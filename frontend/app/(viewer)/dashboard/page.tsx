@@ -298,13 +298,6 @@ export default function DashboardPage() {
           Ver conversaciones
           <ArrowRight className="w-4 h-4" />
         </Link>
-        <Link
-          href="/reportes"
-          className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-[var(--color-primary-800)] text-white text-sm font-semibold hover:bg-[var(--color-primary-900)] transition-colors"
-        >
-          Ver reportes
-          <ArrowRight className="w-4 h-4" />
-        </Link>
       </div>
     </div>
   );
