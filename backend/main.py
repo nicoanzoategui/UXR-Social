@@ -1402,6 +1402,7 @@ def post_theme_summary(
     dataset_id: Optional[int] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    network: Optional[str] = Query(None),
     include_chatbot: bool = Query(False),
     date_scope: str = Query("comment_date"),
     session: Session = Depends(get_session),
@@ -1416,7 +1417,11 @@ def post_theme_summary(
     if dataset_id is not None:
         statement = statement.where(Dataset.id == dataset_id)
     statement = _apply_date_scope_filter(statement, start_date, end_date, date_scope)
-    if _analytics_exclude_chatbot(include_chatbot, None):
+    if network:
+        network_list = [n.strip() for n in network.split(",") if n.strip()]
+        if network_list:
+            statement = statement.where(Comment.network.in_(network_list))
+    elif _analytics_exclude_chatbot(include_chatbot, network):
         statement = statement.where(Dataset.source_type != "Chatbot")
 
     statement = statement.order_by(Comment.comment_date.desc()).limit(100)

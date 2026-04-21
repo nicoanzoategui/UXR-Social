@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   FileText,
   Send,
@@ -30,6 +30,23 @@ const stepCircleStyle = { background: "#dbeafe", color: "#1e40af" };
 const cardClass = `${viewerCard} p-6 sm:p-8 hover:shadow-md`;
 
 type DateScope = "comment_date" | "dataset_upload";
+
+/** Origen del reporte: todo el dataset, solo redes (sin chatbot) o solo chatbot. */
+type ReportSource = "all" | "redes" | "chatbot";
+
+function reportSourceToQuery(source: ReportSource): {
+  include_chatbot: boolean;
+  network?: string;
+} {
+  switch (source) {
+    case "redes":
+      return { include_chatbot: false };
+    case "chatbot":
+      return { include_chatbot: true, network: "Chatbot" };
+    default:
+      return { include_chatbot: true };
+  }
+}
 
 function triggerBlobDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -63,6 +80,7 @@ export default function ReportsPage() {
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   /** Por defecto alineamos con el historial de subidas; el CSV grande suele tener mensajes fuera del rango del calendario. */
   const [dateScope, setDateScope] = useState<DateScope>("dataset_upload");
+  const [reportSource, setReportSource] = useState<ReportSource>("all");
   const [emails, setEmails] = useState<string[]>([]);
   const [currentEmail, setCurrentEmail] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -85,12 +103,25 @@ export default function ReportsPage() {
 
   const datesComplete = Boolean(dateRange.start && dateRange.end);
 
+  const analyticsParams = useMemo(() => {
+    const rq = reportSourceToQuery(reportSource);
+    return {
+      start_date: dateRange.start,
+      end_date: dateRange.end,
+      date_scope: dateScope,
+      include_chatbot: rq.include_chatbot,
+      ...(rq.network ? { network: rq.network } : {}),
+    };
+  }, [dateRange.start, dateRange.end, dateScope, reportSource]);
+
   useEffect(() => {
     setConsolidatedSummary(null);
     setConsolidatedError(null);
     setConsolidatedVisible(false);
     setFileDownloadError(null);
-  }, [dateRange.start, dateRange.end, dateScope]);
+    setAiSummaryByTheme({});
+    setAiErrorByTheme({});
+  }, [dateRange.start, dateRange.end, dateScope, reportSource]);
 
   useEffect(() => {
     if (!dateRange.start || !dateRange.end) {
@@ -101,12 +132,7 @@ export default function ReportsPage() {
     (async () => {
       setTopicsLoading(true);
       try {
-        const data = await getTopics({
-          start_date: dateRange.start,
-          end_date: dateRange.end,
-          include_chatbot: true,
-          date_scope: dateScope,
-        });
+        const data = await getTopics(analyticsParams);
         if (!cancelled) setTopics(data || []);
       } catch {
         if (!cancelled) setTopics([]);
@@ -117,7 +143,7 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [dateRange.start, dateRange.end, dateScope]);
+  }, [dateRange.start, dateRange.end, analyticsParams]);
 
   const handleThemeSummary = async (themeName: string) => {
     if (!dateRange.start || !dateRange.end) return;
@@ -134,10 +160,7 @@ export default function ReportsPage() {
         {
           params: {
             theme: themeName,
-            start_date: dateRange.start,
-            end_date: dateRange.end,
-            include_chatbot: true,
-            date_scope: dateScope,
+            ...analyticsParams,
           },
         }
       );
@@ -163,12 +186,7 @@ export default function ReportsPage() {
     setDownloadBusyKey("consolidated-pdf");
     try {
       const res = await api.get("/analytics/consolidated-pdf", {
-        params: {
-          start_date: dateRange.start,
-          end_date: dateRange.end,
-          include_chatbot: true,
-          date_scope: dateScope,
-        },
+        params: analyticsParams,
         responseType: "blob",
       });
       const blob =
@@ -192,10 +210,7 @@ export default function ReportsPage() {
       const res = await api.get("/analytics/theme-pdf", {
         params: {
           theme: topic,
-          start_date: dateRange.start,
-          end_date: dateRange.end,
-          include_chatbot: true,
-          date_scope: dateScope,
+          ...analyticsParams,
         },
         responseType: "blob",
       });
@@ -230,12 +245,7 @@ export default function ReportsPage() {
         "/analytics/consolidated-summary",
         {},
         {
-          params: {
-            start_date: dateRange.start,
-            end_date: dateRange.end,
-            include_chatbot: true,
-            date_scope: dateScope,
-          },
+          params: analyticsParams,
         }
       );
       setConsolidatedSummary(data.summary);
@@ -282,12 +292,7 @@ export default function ReportsPage() {
     setError(null);
     try {
       setLoadingStep("Generando reporte...");
-      const reportData = await getFullReport({
-        start_date: dateRange.start,
-        end_date: dateRange.end,
-        include_chatbot: true,
-        date_scope: dateScope,
-      });
+      const reportData = await getFullReport(analyticsParams);
 
       setLoadingStep("Enviando emails...");
       await sendReport({
@@ -385,6 +390,51 @@ export default function ReportsPage() {
             <span>
               <span className="font-semibold">Fecha del mensaje en el CSV</span> — solo comentarios cuya fecha de
               interacción cae entre Desde y Hasta.
+            </span>
+          </label>
+        </fieldset>
+
+        <fieldset className="mt-6 space-y-3 border-0 p-0">
+          <legend className="text-xs font-semibold text-[var(--color-text-muted)]">
+            ¿Qué datos incluye el reporte?
+          </legend>
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text-body)]">
+            <input
+              type="radio"
+              name="report-source"
+              checked={reportSource === "all"}
+              onChange={() => setReportSource("all")}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-semibold">Todo</span> — redes sociales y chatbot: todo lo cargado en la plataforma
+              que entre en el período (según la opción de fechas de arriba).
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text-body)]">
+            <input
+              type="radio"
+              name="report-source"
+              checked={reportSource === "redes"}
+              onChange={() => setReportSource("redes")}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-semibold">Redes</span> — Instagram, Facebook, LinkedIn y X; no incluye mensajes del
+              chatbot.
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text-body)]">
+            <input
+              type="radio"
+              name="report-source"
+              checked={reportSource === "chatbot"}
+              onChange={() => setReportSource("chatbot")}
+              className="mt-1"
+            />
+            <span>
+              <span className="font-semibold">Chatbot</span> — solo conversaciones del chatbot; no incluye comentarios de
+              redes.
             </span>
           </label>
         </fieldset>
